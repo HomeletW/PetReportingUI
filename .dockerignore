@@ -10,3 +10,6 @@ media
 
 ._*
 .DS_Store
+
+**/node_modules
+n8n/config.local.json

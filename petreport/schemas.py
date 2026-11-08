@@ -129,7 +129,42 @@ class DeliveryResult(Lease):
     error_code: Literal["pre_send_failure", "timeout", "transport_failure", "upstream_rejected"] | None = None
 
 
+class RunDiagnostic(Strict):
+    request_stage: Literal[
+        "readiness",
+        "claim",
+        "processing",
+        "stored_boundary",
+        "boundary_context",
+        "login",
+        "relogin",
+        "oldest",
+        "source_page",
+        "refresh_open",
+        "member_detail",
+        "heartbeat",
+        "group",
+        "upsert",
+        "reconcile",
+        "cache",
+        "visit_detail",
+        "image",
+        "classification",
+        "prepare",
+        "finalize",
+        "delivery_claim",
+        "delivery_send",
+        "delivery_result",
+        "cleanup",
+        "finish",
+        "failed_finish",
+    ]
+    http_status: int = Field(ge=0, le=599)
+    code: Literal["http_failure", "invalid_response", "transport_failure", "planning_failure"]
+
+
 class Finish(Lease):
+    diagnostic: RunDiagnostic | None = None
     status: Literal["complete", "partial", "failed"]
     stage: Literal["collect", "group", "classify", "report", "delivery", "finished"]
     error_codes: list[

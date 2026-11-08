@@ -1,0 +1,6 @@
+{
+  "name": "pet-reporting-workflow-tests",
+  "private": true,
+  "scripts": {"test": "node --test tests/*.test.js"},
+  "devDependencies": {"luxon": "3.7.2"}
+}

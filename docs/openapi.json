@@ -750,6 +750,44 @@
         }
       }
     },
+    "/internal/v1/visits/{visit_id}": {
+      "get": {
+        "summary": "Get Visit",
+        "operationId": "get_visit_internal_v1_visits__visit_id__get",
+        "parameters": [
+          {
+            "name": "visit_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Visit Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "summary": "Healthz",
@@ -1401,6 +1439,16 @@
             "format": "uuid",
             "title": "Lease Token"
           },
+          "diagnostic": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunDiagnostic"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -1569,6 +1617,67 @@
           "kind"
         ],
         "title": "Prepare"
+      },
+      "RunDiagnostic": {
+        "properties": {
+          "request_stage": {
+            "type": "string",
+            "enum": [
+              "readiness",
+              "claim",
+              "processing",
+              "stored_boundary",
+              "boundary_context",
+              "login",
+              "relogin",
+              "oldest",
+              "source_page",
+              "refresh_open",
+              "member_detail",
+              "heartbeat",
+              "group",
+              "upsert",
+              "reconcile",
+              "cache",
+              "visit_detail",
+              "image",
+              "classification",
+              "prepare",
+              "finalize",
+              "delivery_claim",
+              "delivery_send",
+              "delivery_result",
+              "cleanup",
+              "finish",
+              "failed_finish"
+            ],
+            "title": "Request Stage"
+          },
+          "http_status": {
+            "type": "integer",
+            "maximum": 599.0,
+            "minimum": 0.0,
+            "title": "Http Status"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "http_failure",
+              "invalid_response",
+              "transport_failure",
+              "planning_failure"
+            ],
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_stage",
+          "http_status",
+          "code"
+        ],
+        "title": "RunDiagnostic"
       },
       "Upsert": {
         "properties": {

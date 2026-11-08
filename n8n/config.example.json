@@ -1,0 +1,43 @@
+{
+  "report_url": "http://localhost:8092",
+  "frigate_url": "https://frigate.example.invalid",
+  "household_id": "home",
+  "source_id": "frigate-home",
+  "timezone": "America/Toronto",
+  "pet_id": "coconut",
+  "stations": [
+    {
+      "id": "feeder",
+      "camera": "feeder_camera",
+      "zone": "feeder",
+      "kind": "feeder",
+      "enabled": true
+    },
+    {
+      "id": "litterbox",
+      "camera": "litterbox_camera",
+      "zone": "litterbox",
+      "kind": "litterbox",
+      "enabled": true
+    }
+  ],
+  "merge_gap_seconds": 60,
+  "grouping_version": "station-v1-gap60",
+  "max_cluster_seconds": 1800,
+  "max_cluster_fragments": 30,
+  "page_limit": 100,
+  "max_pages": 32,
+  "max_events": 500,
+  "weekly_weekday": 7,
+  "model": "qwen3-vl:8b-instruct",
+  "prompt_version": "station-observation-v2",
+  "inference_enabled": true,
+  "max_classifications_per_run": 20,
+  "notifications_enabled": false,
+  "delivery_verified": false,
+  "home_assistant_url": "https://home-assistant.example.invalid",
+  "bbox_verified": false,
+  "clip_verified": false,
+  "boundary_context_seconds": 300,
+  "max_state_bytes": 500000
+}

@@ -2,7 +2,7 @@
 
 A LAN-only FastAPI server for the homelab pet-report pipeline. It stores Frigate source events and reconciled visits in **external PostgreSQL**, caches evidence on disk, and renders daily/weekly reports. Configuration and secrets are YAML. No Redis, SQLite, SPA, collector schedule, inference agent, or notification sender is included.
 
-n8n owns collection/pagination, grouping, inference, report selection, and the morning schedule. This repository implements the server portion of the November 7, 2026 proposal.
+n8n owns collection/pagination, grouping, inference, report selection, and the morning schedule. The [n8n implementation and setup guide](n8n/README.md) includes a portable inactive workflow, deterministic logic, and tests. Deployment-specific settings and credential values stay outside this public repository.
 
 ## Deployment
 
@@ -122,4 +122,4 @@ docker compose -f compose.test.yaml down
 
 Local tests skip DB cases unless `TEST_DATABASE=1`; the full Compose suite migrates an isolated ephemeral PostgreSQL 17 database and tests idempotency, fencing/concurrency, transactional reconciliation, report snapshots, classification evidence, escaped HTML, DST, boundary continuation, media visibility/ranges, shared-media retention/recovery, and delivery replay/unknown semantics. Test credentials are synthetic and have no deployment access.
 
-Remaining integration acceptance: central PostgreSQL connectivity/migration, authenticated Frigate snapshots, installed bbox/clip support and codecs, full-day pagination/ties, footage-based grouping thresholds, Ollama inference accuracy, n8n workflow authoring, Home Assistant catalog/device checks, phone review, and coordinated production backup/restore. No n8n workflow or family notification is activated by this server.
+Remaining operational acceptance includes installed bbox/clip support and codecs, footage-based grouping thresholds, Ollama inference accuracy, Home Assistant catalog/device checks, phone review, and coordinated production backup/restore. Validate each deployment independently. No n8n workflow or family notification is activated by this server.

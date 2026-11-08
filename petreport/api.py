@@ -703,7 +703,16 @@ def finish(run_id: UUID, body: s.Finish, session=Depends(session_for)):
     session.execute(
         update(db.runs)
         .where(db.runs.c.id == str(run_id))
-        .values(status=body.status, stage=body.stage, errors=body.error_codes, lease_until=db.now())
+        .values(
+            status=body.status,
+            stage=body.stage,
+            errors=(
+                {"codes": body.error_codes, "diagnostic": body.diagnostic.model_dump()}
+                if body.diagnostic
+                else body.error_codes
+            ),
+            lease_until=db.now(),
+        )
     )
     return {"status": body.status}
 
@@ -1031,3 +1040,29 @@ def get_delivery(local_send_date: date):
             .all()
         )
         return {"deliveries": [dict(row) for row in rows]}
+
+
+@router.get("/visits/{visit_id}")
+def get_visit(visit_id: UUID):
+    with db.sessions()() as session:
+        row = (
+            session.execute(
+                select(db.visits).where(db.visits.c.id == str(visit_id), db.visits.c.active.is_(True))
+            )
+            .mappings()
+            .first()
+        )
+        if not row:
+            fail(404, "visit_not_found")
+        assets = (
+            session.execute(
+                select(
+                    db.media.c.id, db.media.c.kind, db.media.c.variant, db.media.c.sha256, db.media.c.status
+                )
+                .join(db.visit_media, db.visit_media.c.media_id == db.media.c.id)
+                .where(db.visit_media.c.visit_id == str(visit_id))
+            )
+            .mappings()
+            .all()
+        )
+        return {**dict(row), "media": [dict(asset) for asset in assets]}

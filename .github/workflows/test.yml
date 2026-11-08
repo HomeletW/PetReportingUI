@@ -12,3 +12,19 @@ jobs:
       - name: Clean test containers
         if: always()
         run: docker compose -f compose.test.yaml down
+
+  workflow-logic-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: n8n/package-lock.json
+      - run: npm ci --prefix n8n
+      - run: npm test --prefix n8n
+      - name: Verify portable workflow is reproducible
+        run: |
+          python3 n8n/build.py
+          git diff --exit-code -- n8n/workflows/morning.sdk.ts
