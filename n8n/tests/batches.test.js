@@ -87,3 +87,11 @@ test('nightly generation drains live batches without enabling a send phase',()=>
  assert.equal(s.phase,'classify');
  assert.equal(s.cfg.send_notification,false);
 });
+
+test('resend option is enabled only for manual notification-only executions',()=>{
+ const cfg={resend_notification:true,manual_execution:true};
+ assert.equal(selectRunOptions(cfg,'notify_only','2026-11-08').manual_resend,true);
+ for(const manual of [false,undefined,'true'])assert.equal(selectRunOptions({...cfg,manual_execution:manual},'notify_only','2026-11-08').manual_resend,false);
+ for(const intent of ['manual_send','manual_batch','build_batch'])assert.equal(selectRunOptions(cfg,intent,'2026-11-08').manual_resend,false);
+ assert.equal(selectRunOptions({...cfg,resend_notification:false},'notify_only','2026-11-08').manual_resend,false);
+});

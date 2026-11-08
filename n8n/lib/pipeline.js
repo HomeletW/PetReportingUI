@@ -35,7 +35,7 @@ function initialize(cfg, input, now, executionId) {
   const day = calendar(date, now, cfg.timezone);
   if (date > today.toISODate() || today.diff(day,'days').days > 89) throw new Error('invalid_run_date');
   const dryRun = input.dry_run !== false;
-  const state = {cfg,execution_id:String(executionId),seq:0,local_date:date,actual_today:today.toISODate(),dry_run:dryRun,notify:!dryRun && input.notify === true,notification_only:input.notification_only===true,requested_dates:input.backfill_dates || null,mode:input.mode || 'auto',stage:'collect',clock_ms:now.toMillis(),errors:[],reports:[],classification_failures:0,classification_count:0,classification_saved:0,classification_deferred:0,delivery_state:'not_requested',review_clusters:0,source_cookie:'',run:null};
+  const state = {cfg,execution_id:String(executionId),seq:0,local_date:date,actual_today:today.toISODate(),dry_run:dryRun,notify:!dryRun && input.notify === true,notification_only:input.notification_only===true,resend_key:input.manual_resend===true && input.notification_only===true && !dryRun ? `manual-${executionId}` : null,requested_dates:input.backfill_dates || null,mode:input.mode || 'auto',stage:'collect',clock_ms:now.toMillis(),errors:[],reports:[],classification_failures:0,classification_count:0,classification_saved:0,classification_deferred:0,delivery_state:'not_requested',review_clusters:0,source_cookie:'',run:null};
   if (!['auto','daily','weekly'].includes(state.mode)) throw new Error('invalid_report_mode');
   return request(state,'report','GET','/readiness',null,'readiness');
 }
@@ -161,7 +161,7 @@ function prepareNext(state) {
     if(state.selected_kind==='weekly') state.report_queue.push({kind:'weekly',local_start:state.week_start,local_end:state.local_date,timezone:state.cfg.timezone});
   }
   if(!state.report_queue.length) {
-    if(notificationAllowed(state) && state.selected_report?.usable) return reportRequest(state,'POST','/deliveries/claim',{local_send_date:state.local_date,channel:'home_assistant',report_id:state.selected_report.report_id},'delivery_claim');
+    if(notificationAllowed(state) && state.selected_report?.usable) return reportRequest(state,'POST','/deliveries/claim',{local_send_date:state.local_date,channel:'home_assistant',report_id:state.selected_report.report_id,...(state.resend_key?{resend_key:state.resend_key}:{})},'delivery_claim');
     return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
   }
   state.current_report=state.report_queue.shift();
@@ -189,7 +189,7 @@ function notificationPayload(state, now) {
   if(info.collection_status && info.collection_status!=='complete')message+=` This is a partial ${weekly?'week':'day'}, so some moments may be missing.`;
   message+=' Take a peek! 💛\n\n'+report.url;
   const icon=info.icon_url || state.cfg.report_url.replace(/\/$/,'')+'/static/icon.png';
-  return {title,message,data:{url:report.url,clickAction:report.url,tag:`pet-report-${state.local_date}`,icon_url:icon,notification_icon:'mdi:cat'}};
+  return {title,message,data:{url:report.url,clickAction:report.url,tag:`pet-report-${state.local_date}${state.resend_key?"-"+state.resend_key:""}`,icon_url:icon,notification_icon:'mdi:cat'}};
 }
 
 function markFailed(state, code) {
@@ -244,7 +244,7 @@ function advance(state, response, now) {
       state.selected_kind=state.mode==='auto'?(day.weekday===state.cfg.weekly_weekday?'weekly':'daily'):state.mode;
       if(state.notification_only) {
         if(!notificationAllowed(state))return markFailed(state,'dependency_unavailable');
-        return reportRequest(state,'POST','/deliveries/claim',{local_send_date:state.local_date,channel:'home_assistant',report_id:state.selected_report.report_id},'delivery_claim');
+        return reportRequest(state,'POST','/deliveries/claim',{local_send_date:state.local_date,channel:'home_assistant',report_id:state.selected_report.report_id,...(state.resend_key?{resend_key:state.resend_key}:{})},'delivery_claim');
       }
       return reportRequest(state,'GET',`/processing-days?local_start=${day.minus({days:7}).toISODate()}&local_end=${state.local_date}`,null,'processing');
     }

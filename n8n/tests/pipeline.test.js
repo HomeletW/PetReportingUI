@@ -203,3 +203,22 @@ test('weekly copy names the actual week, handles singular counts, and follows th
  assert.match(payload.message,/1 visit by the feeder and 0 litterbox visits/);
  assert.ok(!payload.message.includes('partial'));
 });
+
+test('manual resend has one stable execution key and keeps the scheduled delivery claim unmodified',()=>{
+ const enabled={...cfg,notifications_enabled:true,delivery_verified:true,resend_notification:true,manual_execution:true};
+ const options=context.selectRunOptions(enabled,'notify_only','2026-11-07');
+ let s=context.initialize(enabled,options,now,'42');
+ assert.equal(s.resend_key,'manual-42');
+ s=context.advance(s,{statusCode:200,body:{ready:true}},now);
+ s=context.advance(s,{statusCode:200,body:{available:true,usable:true,report_id:'saved-report',url:'https://example.invalid/day'}},now);
+ s=context.advance(s,{statusCode:200,body:{...run,notification_permitted:true}},now);
+ assert.equal(s.request.tag,'delivery_claim');
+ assert.equal(s.request.body.resend_key,'manual-42');
+ context.advance(s,{statusCode:200,body:{may_send:true,attempt_id:'resend'}},now);
+ assert.equal(s.request.tag,'delivery_send');
+ assert.equal(s.request.body.data.tag,'pet-report-2026-11-07-manual-42');
+ const automatic=context.initialize(enabled,context.selectRunOptions({...enabled,manual_execution:false},'notify_only','2026-11-07'),now,'43');
+ assert.equal(automatic.resend_key,null);
+ const dry=context.initialize(enabled,{...options,dry_run:true},now,'44');
+ assert.equal(dry.resend_key,null);
+});

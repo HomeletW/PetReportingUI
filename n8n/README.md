@@ -68,7 +68,7 @@ The 60-second threshold is provisional: compare 30/60/120-second grouping agains
 
 Notifications use a friendly, dated daily/weekly title, the saved report’s camera visit counts, a short note when collection is partial, emoji, and a trailing report URL. They do not infer meals, health, or behavior from visit counts. The portrait already hosted at `/static/icon.png` is passed as `icon_url`, with `mdi:cat` as the status-bar icon. Display depends on the installed Home Assistant Companion app and OS.
 
-For a notification-only manual run, start the existing **Morning schedule · 08:00** trigger manually; the saved-report path and once-per-day delivery guard still apply. This does not force a resend of a notification already delivered today.
+For a notification-only manual run, start the existing **Morning schedule · 08:00** trigger manually; the saved-report path and once-per-day delivery guard still apply. To explicitly resend today’s saved notification, open **Notification options**, set the boolean **resend_notification** to `true`, and manually start **Morning schedule · 08:00**. The option only takes effect in a manual editor execution; automatic scheduled runs ignore it. Each manual execution uses its own resend key and delivery audit row, leaving the normal daily slot untouched. Retries within the same execution cannot send twice. Set the toggle back to `false` for normal manual behavior. Expired, deleted, historical or unfinished reports still cannot be sent.
 
 ## Privacy and execution retention
 

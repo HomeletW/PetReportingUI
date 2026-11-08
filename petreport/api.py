@@ -697,6 +697,7 @@ def delivery_claim(body: s.DeliveryClaim, session=Depends(session_for)):
         db.deliveries.c.household_id == cfg.household_id,
         db.deliveries.c.local_send_date == body.local_send_date,
         db.deliveries.c.channel == body.channel,
+        db.deliveries.c.resend_key == (body.resend_key or ""),
     )
     row = session.execute(select(db.deliveries).where(*where)).mappings().first()
     if row and row["state"] != "definitely_failed":
@@ -706,6 +707,7 @@ def delivery_claim(body: s.DeliveryClaim, session=Depends(session_for)):
         household_id=cfg.household_id,
         local_send_date=body.local_send_date,
         channel=body.channel,
+        resend_key=body.resend_key or "",
         report_id=str(body.report_id),
         state="claimed",
         attempt_id=attempt,
@@ -781,7 +783,7 @@ def readiness():
                 version = session.execute(
                     text("SELECT version_num FROM alembic_version")
                 ).scalar_one_or_none()
-                checks["database"] = "ready" if version == "0001" else "migration_required"
+                checks["database"] = "ready" if version == "0002" else "migration_required"
             else:
                 checks["database"] = "migration_required"
     except (SQLAlchemyError, RuntimeError):

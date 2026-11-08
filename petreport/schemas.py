@@ -118,6 +118,9 @@ class Finalize(Lease):
 
 
 class DeliveryClaim(Lease):
+    resend_key: (
+        Annotated[str, Field(min_length=8, max_length=128, pattern=r"^manual-[A-Za-z0-9_-]+$")] | None
+    ) = None
     local_send_date: date
     channel: Literal["home_assistant"] = "home_assistant"
     report_id: UUID

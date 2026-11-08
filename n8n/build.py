@@ -304,7 +304,7 @@ add(
     alwaysOutputData=True,
 )
 
-summary = "const s=$input.first().json; return [{json:{run_id:s.run?.run_id,dry_run:s.dry_run,local_date:s.local_date,status:s.failure?'failed':s.errors.length?'partial':'complete',errors:[...new Set(s.errors)],review_clusters:s.review_clusters,classification_failures:s.classification_failures,classification_count:s.classification_count,classification_saved:s.classification_saved,classification_deferred:s.classification_deferred,delivery_state:s.delivery_state,reports:s.reports,selected_report:s.selected_report || null,notification_enabled:s.cfg.notifications_enabled && s.cfg.delivery_verified}}];"
+summary = "const s=$input.first().json; return [{json:{run_id:s.run?.run_id,dry_run:s.dry_run,local_date:s.local_date,status:s.failure?'failed':s.errors.length?'partial':'complete',errors:[...new Set(s.errors)],review_clusters:s.review_clusters,classification_failures:s.classification_failures,classification_count:s.classification_count,classification_saved:s.classification_saved,classification_deferred:s.classification_deferred,manual_resend:!!s.resend_key,delivery_state:s.delivery_state,reports:s.reports,selected_report:s.selected_report || null,notification_enabled:s.cfg.notifications_enabled && s.cfg.delivery_verified}}];"
 add("complete", "Run summary", "n8n-nodes-base.code", 2, {"mode": "runOnceForAllItems", "jsCode": summary})
 batch_common = (ROOT / "lib/batches.js").read_text().split("if(typeof module")[0]
 run_mode = {"dry_run": False, "timezone": "America/Toronto", "max_batches": 120}
@@ -347,16 +347,44 @@ add(
 )
 add(
     "morningMode",
-    "Select saved morning report",
+    "Notification options",
     "n8n-nodes-base.set",
     3.5,
     {
-        "mode": "raw",
-        "jsonOutput": Expr(
-            '{{ {intent: "notify_only", local_date: $now.setZone("America/Toronto").toISODate()} }}'
-        ),
+        "mode": "manual",
+        "assignments": {
+            "assignments": [
+                {
+                    "id": "resend-notification",
+                    "name": "resend_notification",
+                    "value": False,
+                    "type": "boolean",
+                },
+                {"id": "notification-intent", "name": "intent", "value": "notify_only", "type": "string"},
+                {
+                    "id": "notification-date",
+                    "name": "local_date",
+                    "value": Expr('{{ $now.setZone("America/Toronto").toISODate() }}'),
+                    "type": "string",
+                },
+                {
+                    "id": "manual-execution",
+                    "name": "manual_execution",
+                    "value": Expr('{{ $execution.mode === "test" }}'),
+                    "type": "boolean",
+                },
+            ]
+        },
         "includeOtherFields": False,
     },
+    [
+        {
+            "resend_notification": False,
+            "intent": "notify_only",
+            "local_date": "2026-11-08",
+            "manual_execution": False,
+        }
+    ],
 )
 add(
     "runMode",
@@ -460,7 +488,7 @@ for var, value in nodes:
     )
     lines.append("const " + var + " = " + fn + "(" + emit(value) + ");")
 lines.append(
-    "const note = sticky('## Manual run and dry run\\nExecute workflow processes yesterday through successive small batches, then calls Home Assistant. Run mode: dry_run=false sends a real notification; dry_run=true processes without sending or destructive cleanup. All logic is in this workflow; batch executions call its own batch entry. Daily generation runs at 00:30 without notifying. At 08:00 only the saved, fully generated report is sent. Sunday selects the weekly report. Manual run still processes and notifies; delivery fencing prevents duplicates. Schedules require publication.');"
+    "const note = sticky('## Manual run and dry run\\nExecute workflow processes yesterday through successive small batches, then calls Home Assistant. Run mode: dry_run=false sends a real notification; dry_run=true processes without sending or destructive cleanup. All logic is in this workflow; batch executions call its own batch entry. Daily generation runs at 00:30 without notifying. At 08:00 only the saved, fully generated report is sent. Sunday selects the weekly report. For an explicit manual resend, enable Notification options → resend_notification and manually run the 08:00 trigger. Scheduled executions ignore this option. Each resend has its own audit record. Manual run still processes and notifies; delivery fencing prevents duplicates. Schedules require publication.');"
 )
 lines.append("export default workflow('pet-reporting-morning','Pet Journal · Morning reports')")
 lines += [

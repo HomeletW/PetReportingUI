@@ -195,7 +195,8 @@ deliveries = Table(
     Column("claimed_at", DateTime(timezone=True), nullable=False),
     Column("last_error", String),
     Column("accepted_at", DateTime(timezone=True)),
-    UniqueConstraint("household_id", "local_send_date", "channel"),
+    Column("resend_key", String, nullable=False, server_default=""),
+    UniqueConstraint("household_id", "local_send_date", "channel", "resend_key", name="uq_deliveries_scope"),
 )
 operations = Table(
     "operations",

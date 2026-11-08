@@ -370,6 +370,37 @@ def test_delivery_slot_replay_and_unknown_never_resend(pgclient):
         == "unknown"
     )
 
+    # Existing daily history survives the additive migration.
+    from alembic import command
+    from alembic.config import Config
+
+    command.downgrade(Config("alembic.ini"), "0001")
+    command.upgrade(Config("alembic.ini"), "head")
+    assert call(c, "/deliveries/claim", body)["may_send"] is False
+    for number, state in [(1, "accepted"), (2, "unknown")]:
+        resend = {**body, "resend_key": f"manual-test-{number}"}
+        fresh = call(c, "/deliveries/claim", resend, key=f"manual-operation-{number}")
+        assert fresh["may_send"] is True
+        assert fresh["attempt_id"] != first["attempt_id"]
+        assert call(c, "/deliveries/claim", resend, key=f"manual-operation-{number}")["may_send"] is False
+        assert call(c, "/deliveries/claim", resend)["may_send"] is False
+        call(c, f"/deliveries/{fresh['attempt_id']}/result", {**lease(run), "result": state})
+        assert call(c, "/deliveries/claim", resend) == {"state": state, "may_send": False}
+    history = c.get("/internal/v1/deliveries", params={"local_send_date": str(today)}).json()["deliveries"]
+    assert len(history) == 3
+    original = next(d for d in history if d["resend_key"] == "")
+    assert original["state"] == "unknown" and original["attempt_id"] == first["attempt_id"]
+    assert call(c, "/deliveries/claim", body)["may_send"] is False
+    call(
+        c,
+        "/deliveries/claim",
+        {**body, "resend_key": "manual-historical", "local_send_date": str(yesterday)},
+        expected=403,
+    )
+    with db.sessions().begin() as session:
+        session.execute(update(db.reports).values(status="deleted"))
+    call(c, "/deliveries/claim", {**body, "resend_key": "manual-deleted"}, expected=409)
+
 
 def test_media_cache_no_network_transaction_and_membership(pgclient):
     c = pgclient
