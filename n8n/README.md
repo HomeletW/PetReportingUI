@@ -1,10 +1,12 @@
 # Pet Journal n8n pipeline
 
-`workflows/morning.sdk.ts` is the portable, inactive SDK definition. `build.py` embeds the readable deterministic modules in Code nodes; it does not require network access. `config.example.json` contains only generic addresses/camera names. Actual deployment settings belong in the private n8n **Deployment settings** node or a gitignored `config.local.json`, never in a public workflow export.
+`workflows/morning.sdk.ts` is the shared processor; `workflows/manual.sdk.ts` is the live Manual run entry and inactive morning schedule. Both are portable SDK definitions. `build.py` embeds the readable deterministic modules in Code nodes; it does not require network access. `config.example.json` contains only generic addresses/camera names. Actual deployment settings belong in the private n8n **Deployment settings** node or a gitignored `config.local.json`, never in a public workflow export.
 
 ## Ownership and flow
 
-One morning workflow has a manual dry-run entry and an inactive daily 08:00 Schedule Trigger. Workflow timezone is America/Toronto. It uses calendar dates for yesterday and the preceding seven completed local dates; Sunday is the provisional weekly-selection day. A weekly run still saves daily reports and selects only the weekly report for the daily delivery slot.
+The **Manual run** workflow has an Execute button and an inactive daily 08:00 Schedule Trigger. It invokes the shared processor repeatedly, classifying at most three uncached visits per child execution until every eligible visit for yesterday has a saved result, then makes one final send-enabled call. The processor’s original **Manual dry run** entry saves one bounded batch without sending. A dry run therefore performs database/evidence/model work; it skips notifications and destructive cleanup.
+
+Both workflows use America/Toronto calendar dates. The run date is fixed before processing; crossing midnight stops orchestration rather than changing dates mid-run. Sunday selects the preceding seven completed local dates for weekly reporting. A weekly run also saves yesterday’s daily report and selects only the weekly report for the daily delivery slot. Daily report membership remains yesterday’s 00:00–24:00.
 
 The canvas separates calendar planning from the bounded request loop. **Dispatch action** routes requests to native HTTP Request nodes or the native Ollama image node. Code nodes perform deterministic planning, normalization, recursive window splitting, station grouping and structured-result validation; they perform no network I/O. The loop carries its state as paired n8n items and uses the server's run lease and checkpoints for safe retries.
 
@@ -14,9 +16,9 @@ The pipeline:
 2. Read already-stored overlapping tracks for boundary context, then authenticate to Frigate with an encrypted credential. Collect only yesterday, plus a small configurable midnight context on either side. Recursively split saturated pages inside that bounded interval.
 3. Normalize and deduplicate IDs, refresh known open source IDs, and group station detections before assigning ownership dates.
 4. Persist raw events in bounded batches, mark processed dates, and transactionally replace candidates for the complete affected ownership interval.
-5. Cache a full-context snapshot per visit. Verified bbox/clip capabilities can add evidence variants. Reuse classifications with matching evidence/grouping/model/prompt fingerprints; classify at most a configured number of uncached visits per run.
+5. Cache a full-context snapshot per visit. Verified bbox/clip capabilities can add evidence variants. Reuse classifications with matching evidence/grouping/model/prompt fingerprints; classify at most `max_classifications_per_run` uncached visits per child run (default three). Return the number deferred so the live wrapper can request another batch.
 6. Validate model identity and evidence IDs, enums, rationale lengths and link restrictions. Invalid or failed inference leaves behavior unknown and preserves visits/evidence. Reports use server template summaries.
-7. Prepare/finalize daily reports and optionally a weekly report. Claim today's delivery slot only when every independent permission is satisfied. The Home Assistant request has no automatic retry; uncertain outcomes become `unknown`.
+7. Prepare/finalize daily reports and optionally a weekly report. Claim today's delivery slot only when every independent permission is satisfied, no classification work is deferred, and the batch has no errors. The Home Assistant request has no automatic retry; uncertain outcomes become `unknown`.
 8. Invoke cleanup (preview only during dry runs), then finish/release the run. Failures record only an allowlisted step, HTTP status and machine code, never upstream error text.
 
 ## Credential setup
@@ -34,7 +36,13 @@ Assign the credentials to their respective HTTP nodes after SDK creation. Dynami
 
 Copy the example values into **Deployment settings** and replace origins, allowlisted camera/zone IDs, timezone and household/source IDs locally. They must match the report server's configuration. Do not paste the resulting node JSON into a public issue, commit, or workflow export.
 
-`run_options` controls manual runs and defaults to `{ "dry_run": true, "notify": false, "mode": "auto" }`. `schedule_options` is separate and defaults to `{ "dry_run": false, "notify": true, "mode": "auto" }`, but no schedule runs until the workflow is explicitly published. In addition, delivery requires `notifications_enabled: true`, `delivery_verified: true`, the report server's own notification switch, and the run's explicit notify permission. Historical run dates can never send.
+Set **Report pipeline** in the Manual run workflow to the installed processor’s workflow ID. The portable SDK uses `REPLACE_WITH_REPORT_WORKFLOW_ID`; never commit installation IDs. Restrict the processor’s **This workflow can be called by** setting to the Manual run workflow. Credentials and source configuration remain in the processor; the wrapper contains only the processor ID, timezone, batch-pass limit, and `send_notification` flag.
+
+- **Manual dry run** in the processor always forces `dry_run: true` and `notify: false`, even if old `run_options` values request sending. `run_options` can still select dates and report mode for explicit historical review.
+- **Manual run · process and notify** in the wrapper drains processing batches, then requests delivery. Set `send_notification: false` in **Report pipeline** to process every eligible visit without sending; the normal setting is `true`.
+- The morning schedule lives only in the wrapper and remains inactive until explicitly published. Manual execution in the n8n editor does not require publication.
+
+The processor accepts only the wrapper’s declared `intent` and `local_date` inputs. `manual_batch` stores a dry, unsent processing batch; `manual_send` requests the final live pass. Delivery still requires `notifications_enabled: true`, `delivery_verified: true`, the report server’s own switch, and explicit notify permission. Historical dates cannot send. Daily delivery fencing also applies to repeated manual runs: accepted or ambiguous deliveries are never automatically resent.
 
 To process one historical day, set manual options to the following pattern (the run date is the following local date):
 
@@ -46,7 +54,7 @@ Restore normal manual options after the test. A dry run stores reports and evide
 
 Normal runs **never automatically load history or catch up missing dates**. Each run processes one completed local day. On the weekly weekday, it processes yesterday as usual and builds the weekly report from the seven stored daily intervals. Missing days remain visibly partial; they are never downloaded just because a weekly report is due. Explicit manual backfill processes one requested day at a time.
 
-The collection-only validation run disables inference and enforces 12 pages, 300 events and 500 KB of state. A subsequent inference validation run classifies at most three uncached visits. These limits fail closed rather than silently truncate. The generic example provides conservative defaults; increase them only after measuring the deployment.
+The collection-only validation run disables inference and enforces 12 pages, 300 events and 500 KB of state. Each inference batch classifies at most three uncached visits. The live wrapper keeps invoking child runs until the deferred count is zero. Child runs reuse cached images and classifications, while rereading the same bounded day to preserve reconciliation behavior. This favors bounded memory and restartability over minimizing source requests. These limits fail closed rather than silently truncate. The generic example provides conservative defaults; increase them only after measuring the deployment.
 
 ## Completeness and grouping limits
 
@@ -58,7 +66,7 @@ A finite boundary margin cannot prove there are no unknown tracks that began muc
 
 Group membership is station-specific and deterministic by start time then ID. Finished overlapping fragments or gaps up to the provisional 60 seconds merge. Ongoing tracks remain separate/provisional and cannot bridge a chain. A source row listing two configured zones may support both stations; no zone chronology is inferred. Long/many-fragment groups are flagged for review in run output, never silently truncated. Expand affected calendar dates until every included finished boundary visit is owned and contained; reject ranges beyond 31 days or server batch limits.
 
-The 60-second threshold is provisional: compare 30/60/120-second grouping against footage before activation. Model labels are suggestions; one snapshot may be insufficient. Classification is bounded, and unclassified visits retain unknown behavior. Inference fingerprints are deterministic cache identifiers, not security hashes; they include evidence SHA-256, grouping membership/version, model name and prompt version. A model digest is not exposed by the node catalog; change the prompt/config version or model tag when replacing model weights.
+The 60-second threshold is provisional: compare 30/60/120-second grouping against footage before activation. Model labels are suggestions; one snapshot may be insufficient. Unclassified visits retain unknown behavior. Errors, missing evidence, the wrapper’s bounded pass limit, or a no-progress condition stop processing instead of silently treating unfinished work as complete. Older reports are not automatically backfilled. Inference fingerprints are deterministic cache identifiers, not security hashes; they include evidence SHA-256, grouping membership/version, model name and prompt version. A model digest is not exposed by the node catalog; change the prompt/config version or model tag when replacing model weights.
 
 ## Privacy and execution retention
 
@@ -80,7 +88,7 @@ npm test --prefix n8n
 python3 n8n/build.py
 ```
 
-The Node tests cover fragmentation, station isolation, ongoing tracks, cross-midnight ownership, DST, saturated timestamp ties, invalid model evidence, dry-run guards and a simulated complete pipeline. A pinned n8n empty-day test verifies the native loop without contacting external services. The server's PostgreSQL suite covers authenticated visit-cache metadata and sanitized failure diagnostics.
+The Node tests cover fragmentation, station isolation, ongoing tracks, cross-midnight ownership, DST, saturated timestamp ties, invalid model evidence, dry-run guards and a simulated complete pipeline. Pinned n8n tests verify the processor and manual wrapper without contacting external services. Orchestration tests cover full backlog draining, safe dry-run defaults, late work, no-progress limits, and midnight rollover. Run summaries expose attempted/saved/deferred classification counts and delivery state. The server's PostgreSQL suite covers authenticated visit-cache metadata and sanitized failure diagnostics.
 
 The SDK must pass both node-config validation and workflow validation before saving. Build/save never means publish. Keep the workflow inactive until real snapshots, classification output, boundary cases, coverage wording, thresholds, Home Assistant service/group membership and phone behavior have been reviewed.
 

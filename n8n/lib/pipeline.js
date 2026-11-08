@@ -35,7 +35,7 @@ function initialize(cfg, input, now, executionId) {
   const day = calendar(date, now, cfg.timezone);
   if (date > today.toISODate() || today.diff(day,'days').days > 89) throw new Error('invalid_run_date');
   const dryRun = input.dry_run !== false;
-  const state = {cfg,execution_id:String(executionId),seq:0,local_date:date,actual_today:today.toISODate(),dry_run:dryRun,notify:!dryRun && input.notify === true,requested_dates:input.backfill_dates || null,mode:input.mode || 'auto',stage:'collect',clock_ms:now.toMillis(),errors:[],reports:[],classification_failures:0,classification_count:0,review_clusters:0,source_cookie:'',run:null};
+  const state = {cfg,execution_id:String(executionId),seq:0,local_date:date,actual_today:today.toISODate(),dry_run:dryRun,notify:!dryRun && input.notify === true,requested_dates:input.backfill_dates || null,mode:input.mode || 'auto',stage:'collect',clock_ms:now.toMillis(),errors:[],reports:[],classification_failures:0,classification_count:0,classification_saved:0,classification_deferred:0,delivery_state:'not_requested',review_clusters:0,source_cookie:'',run:null};
   if (!['auto','daily','weekly'].includes(state.mode)) throw new Error('invalid_report_mode');
   return request(state,'report','GET','/readiness',null,'readiness');
 }
@@ -277,11 +277,11 @@ function advance(state, response, now) {
       const stamp=media?.sha256 ? inputFingerprint(state.current_visit,media,state.cfg) : null;
       state.current_fingerprint=stamp;
       if(stamp && body.classification && body.input_fingerprint===stamp && body.prompt_version===state.cfg.prompt_version && body.model?.name===state.cfg.model){state.media_index+=1;return nextMedia(state);}
-      if(state.classification_count>=state.cfg.max_classifications_per_run){state.media_index+=1;return nextMedia(state);}
+      if(state.classification_count>=state.cfg.max_classifications_per_run){state.classification_deferred+=1;state.media_index+=1;return nextMedia(state);}
       state.classification_count+=1;
       return request(state,'image','GET',state.current_media.inference_path,null,'image');
     }
-    case 'classification': state.media_index+=1;return nextMedia(state);
+    case 'classification': state.classification_saved+=1;state.media_index+=1;return nextMedia(state);
     case 'prepare': state.current_prepared=body;return reportRequest(state,'PUT',`/reports/${body.report_id}/finalize`,{expected_revision:body.revision,use_template:true},'finalize');
     case 'finalize': {
       state.reports.push({kind:state.current_report.kind,local_start:state.current_report.local_start,...body});
@@ -290,11 +290,12 @@ function advance(state, response, now) {
       return prepareNext(state);
     }
     case 'delivery_claim': {
+      state.delivery_state=body.state || 'claimed';
       if(!body.may_send || response.headers?.['idempotency-replayed']==='true')return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
       state.delivery_attempt=body.attempt_id;
       return request(state,'notify','POST','/api/services/notify/'+notificationService(state.cfg),{title:'Pet activity journal',message:state.selected_report.summary,data:{url:state.selected_report.url,clickAction:state.selected_report.url,tag:`pet-report-${state.local_date}`}},'delivery_send');
     }
-    case 'delivery_result': if(body.state==='unknown')state.errors.push('delivery_unknown');return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
+    case 'delivery_result': state.delivery_state=body.state;if(body.state==='unknown')state.errors.push('delivery_unknown');return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
     case 'cleanup': return reportRequest(state,'POST',`/runs/${state.run.run_id}/finish`,{status:state.errors.length?'partial':'complete',stage:'finished',error_codes:[...new Set(state.errors)]},'finish');
     default: throw new Error('unexpected_pipeline_stage');
   }

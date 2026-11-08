@@ -27,4 +27,4 @@ jobs:
       - name: Verify portable workflow is reproducible
         run: |
           python3 n8n/build.py
-          git diff --exit-code -- n8n/workflows/morning.sdk.ts
+          git diff --exit-code -- n8n/workflows/morning.sdk.ts n8n/workflows/manual.sdk.ts

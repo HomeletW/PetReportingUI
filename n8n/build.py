@@ -41,7 +41,6 @@ pipeline = (ROOT / "lib/pipeline.js").read_text().split("if(typeof module")[0]
 common = logic + "\n" + pipeline + "\n"
 cfg = json.loads((ROOT / "config.example.json").read_text())
 cfg["run_options"] = {"dry_run": True, "notify": False, "mode": "auto"}
-cfg["schedule_options"] = {"dry_run": False, "notify": True, "mode": "auto"}
 nodes = []
 
 
@@ -60,23 +59,24 @@ def add(var, name, kind, version, params, output=None, credentials=None, **setti
 
 add("manual", "Manual dry run", "n8n-nodes-base.manualTrigger", 1, {})
 add(
-    "schedule",
-    "Morning schedule (inactive)",
-    "n8n-nodes-base.scheduleTrigger",
-    1.4,
+    "subworkflow",
+    "On-demand report batch",
+    "n8n-nodes-base.executeWorkflowTrigger",
+    1.3,
     {
-        "rule": {
-            "interval": [{"field": "days", "daysInterval": 1, "triggerAtHour": 8, "triggerAtMinute": 0}]
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+            "values": [{"name": "intent", "type": "string"}, {"name": "local_date", "type": "string"}]
         },
-        "misfirePolicy": "skip",
     },
+    [{"intent": "manual_batch", "local_date": "2026-11-08"}],
 )
 add(
     "settingsNode",
     "Deployment settings",
     "n8n-nodes-base.set",
     3.5,
-    {"mode": "raw", "jsonOutput": json.dumps(cfg), "includeOtherFields": False},
+    {"mode": "raw", "jsonOutput": json.dumps(cfg), "includeOtherFields": True},
     [cfg],
 )
 add(
@@ -87,7 +87,7 @@ add(
     {
         "mode": "runOnceForAllItems",
         "jsCode": common
-        + "return [{json:initialize($input.first().json,$execution.mode === 'trigger' ? ($input.first().json.schedule_options || {}) : ($input.first().json.run_options || {}),$now,$execution.id)}];",
+        + "return [{json:initialize($input.first().json,selectRunOptions($input.first().json,$input.first().json.intent,$input.first().json.local_date),$now,$execution.id)}];",
     },
     [{"action": 1, "request": {"method": "GET", "path": "/readiness"}, "dry_run": True}],
 )
@@ -304,25 +304,25 @@ add(
     alwaysOutputData=True,
 )
 
-summary = "const s=$input.first().json; return [{json:{run_id:s.run?.run_id,dry_run:s.dry_run,local_date:s.local_date,status:s.failure?'failed':s.errors.length?'partial':'complete',errors:[...new Set(s.errors)],review_clusters:s.review_clusters,classification_failures:s.classification_failures,reports:s.reports,selected_report:s.selected_report || null,notification_enabled:s.cfg.notifications_enabled && s.cfg.delivery_verified}}];"
+summary = "const s=$input.first().json; return [{json:{run_id:s.run?.run_id,dry_run:s.dry_run,local_date:s.local_date,status:s.failure?'failed':s.errors.length?'partial':'complete',errors:[...new Set(s.errors)],review_clusters:s.review_clusters,classification_failures:s.classification_failures,classification_count:s.classification_count,classification_saved:s.classification_saved,classification_deferred:s.classification_deferred,delivery_state:s.delivery_state,reports:s.reports,selected_report:s.selected_report || null,notification_enabled:s.cfg.notifications_enabled && s.cfg.delivery_verified}}];"
 add("complete", "Run summary", "n8n-nodes-base.code", 2, {"mode": "runOnceForAllItems", "jsCode": summary})
 lines = [
     "import { workflow, node, trigger, switchCase, sticky, newCredential, expr } from '@n8n/workflow-sdk';"
 ]
 for var, value in nodes:
-    fn = "trigger" if var in ("manual", "schedule") else "switchCase" if var == "dispatch" else "node"
+    fn = "trigger" if var in ("manual", "subworkflow") else "switchCase" if var == "dispatch" else "node"
     lines.append("const " + var + " = " + fn + "(" + emit(value) + ");")
 lines.append(
-    "const note = sticky('## Inactive draft\\nManual runs default to dry_run=true, notify=false. Validate footage before activation. Select one notify group: all_devices (default), apple_devices, or android_devices. Verify the connection before delivery. Do not export installation settings or credentials to a public repository.');"
+    "const note = sticky('## Shared report batch\\nManual dry run saves reports without notifications. Use the Manual run workflow to drain all classification batches and then notify. Validate footage before activation. Select one notify group: all_devices (default), apple_devices, or android_devices. Verify the connection before delivery. Do not export installation settings or credentials to a public repository.');"
 )
 lines.append("export default workflow('pet-reporting-morning','Pet Journal · Morning reports')")
 lines += [
     ".add(manual).to(settingsNode).to(initializeNode).to(dispatch)",
-    ".add(schedule).to(settingsNode)",
+    ".add(subworkflow).to(settingsNode)",
     ".add(dispatch.onCase(0,write.to(advanceNode)).onCase(1,read.to(advanceNode)).onCase(2,login.to(advanceNode)).onCase(3,source.to(advanceNode)).onCase(4,group.to(dispatch)).onCase(5,image.to(vision).to(validateModel).to(dispatch)).onCase(6,notify.to(advanceNode)).onCase(7,complete))",
     ".add(advanceNode).to(dispatch)",
     ".add(note)",
-    ".group('Plan report dates',[settingsNode,initializeNode],{description:'Chooses local calendar dates and defaults every manual run to unsent processing.'})",
+    ".group('Plan report dates',[settingsNode,initializeNode],{description:'Chooses local dates; dry-run entry stays unsent, and on-demand requests process one bounded batch.'})",
     ".group('Build activity journal',[dispatch,write,read,login,source,advanceNode,group,image,vision,validateModel,notify],{description:'Collects yesterday’s detections, reconciles visits, caches evidence and saves daily or weekly reports with guarded delivery.'});",
 ]
 code = "\n".join(lines) + "\n"
@@ -343,3 +343,198 @@ code = "\n".join(lines) + "\n"
     + "\n"
 )
 print(f"Built {len(nodes)} nodes; {len(code)} SDK characters")
+
+# A separate manual/scheduled entry shares the installed processor's settings and credentials.
+# The portable file contains a placeholder; set the real workflow ID only inside n8n.
+batch_common = (ROOT / "lib/batches.js").read_text().split("if(typeof module")[0]
+batch_settings = {
+    "report_workflow_id": "REPLACE_WITH_REPORT_WORKFLOW_ID",
+    "timezone": "America/Toronto",
+    "max_batches": 120,
+    "send_notification": True,
+}
+wrapper = ["import { workflow, node, trigger, switchCase, sticky, expr } from '@n8n/workflow-sdk';"]
+wrapper.append(
+    "const manual = trigger("
+    + emit(
+        {
+            "type": "n8n-nodes-base.manualTrigger",
+            "version": 1,
+            "config": {"name": "Manual run · process and notify", "parameters": {}},
+            "output": [{}],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const schedule = trigger("
+    + emit(
+        {
+            "type": "n8n-nodes-base.scheduleTrigger",
+            "version": 1.4,
+            "config": {
+                "name": "Morning schedule (inactive)",
+                "parameters": {
+                    "rule": {
+                        "interval": [
+                            {"field": "days", "daysInterval": 1, "triggerAtHour": 8, "triggerAtMinute": 0}
+                        ]
+                    },
+                    "misfirePolicy": "skip",
+                },
+            },
+            "output": [{}],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const settings = node("
+    + emit(
+        {
+            "type": "n8n-nodes-base.set",
+            "version": 3.5,
+            "config": {
+                "name": "Report pipeline",
+                "parameters": {
+                    "mode": "raw",
+                    "jsonOutput": json.dumps(batch_settings),
+                    "includeOtherFields": False,
+                },
+            },
+            "output": [batch_settings],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const plan = node("
+    + emit(
+        {
+            "type": "n8n-nodes-base.code",
+            "version": 2,
+            "config": {
+                "name": "Plan classification batches",
+                "parameters": {
+                    "mode": "runOnceForAllItems",
+                    "jsCode": batch_common + "return [{json:newBatchPlan($input.first().json,$now)}];",
+                },
+            },
+            "output": [{"action": 0, "phase": "classify"}],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const dispatch = switchCase("
+    + emit(
+        {
+            "type": "n8n-nodes-base.switch",
+            "version": 3.5,
+            "config": {
+                "name": "Dispatch batches",
+                "parameters": {
+                    "mode": "expression",
+                    "numberOutputs": 2,
+                    "output": Expr("{{ $json.action }}"),
+                },
+            },
+            "output": [{"action": 0}],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const run = node("
+    + emit(
+        {
+            "type": "n8n-nodes-base.executeWorkflow",
+            "version": 1.4,
+            "config": {
+                "name": "Run report batch",
+                "parameters": {
+                    "source": "database",
+                    "workflowId": {
+                        "__rl": True,
+                        "mode": "id",
+                        "value": Expr("{{ $json.cfg.report_workflow_id }}"),
+                    },
+                    "workflowInputs": {
+                        "mappingMode": "defineBelow",
+                        "value": {
+                            "intent": Expr("{{ $json.phase === 'send' ? 'manual_send' : 'manual_batch' }}"),
+                            "local_date": Expr("{{ $json.local_date }}"),
+                        },
+                        "schema": [
+                            {
+                                "id": "intent",
+                                "displayName": "intent",
+                                "type": "string",
+                                "required": True,
+                                "display": True,
+                            },
+                            {
+                                "id": "local_date",
+                                "displayName": "local_date",
+                                "type": "string",
+                                "required": True,
+                                "display": True,
+                            },
+                        ],
+                    },
+                    "mode": "once",
+                    "options": {"waitForSubWorkflow": True},
+                },
+                "retryOnFail": False,
+            },
+            "output": [
+                {"status": "complete", "errors": [], "classification_saved": 3, "classification_deferred": 0}
+            ],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const advance = node("
+    + emit(
+        {
+            "type": "n8n-nodes-base.code",
+            "version": 2,
+            "config": {
+                "name": "Advance classification batches",
+                "parameters": {
+                    "mode": "runOnceForAllItems",
+                    "jsCode": batch_common
+                    + "return [{json:advanceBatches($('Dispatch batches').item.json,$input.first().json,$now)}];",
+                },
+            },
+            "output": [{"action": 1, "phase": "send"}],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const summary = node("
+    + emit(
+        {
+            "type": "n8n-nodes-base.code",
+            "version": 2,
+            "config": {
+                "name": "Manual run result",
+                "parameters": {
+                    "mode": "runOnceForAllItems",
+                    "jsCode": "const s=$input.first().json;return [{json:{...s.result,processing_batches:s.batches,total_classified:s.total_classified}}];",
+                },
+            },
+            "output": [{"status": "complete", "delivery_state": "accepted"}],
+        }
+    )
+    + ");"
+)
+wrapper.append(
+    "const note = sticky('## Manual run · sends a notification\\nClick Execute workflow. Processes yesterday through small sequential classification batches, then requests one Home Assistant delivery. Reuses cached results. Daily delivery fencing prevents duplicate alerts. Schedule remains inactive until published.');"
+)
+wrapper.append(
+    "export default workflow('pet-reporting-manual','Pet Journal · Manual run').add(manual).to(settings).to(plan).to(dispatch).add(schedule).to(settings).add(dispatch.onCase(0,run.to(advance).to(dispatch)).onCase(1,summary)).add(note).group('Prepare run',[settings,plan],{description:'Fixes the local run date before requesting bounded classification batches.'}).group('Process and notify',[dispatch,run,advance],{description:'Drains cached classification work in small child executions, then sends once.'});"
+)
+(ROOT / "workflows/manual.sdk.ts").write_text("\n".join(wrapper) + "\n")

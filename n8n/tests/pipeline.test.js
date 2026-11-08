@@ -123,3 +123,16 @@ test('notification failures are recorded as unknown without a second send',()=>{
    assert.equal(s.request.body.result,'unknown');
  }
 });
+
+test('uncached eligible visits beyond the batch budget are counted for the next run',()=>{
+ const s={cfg:{...cfg,inference_enabled:true,max_classifications_per_run:3},run,seq:0,execution_id:'batch',request:{tag:'visit_detail'},current_media:{media_id:'media-id'},current_visit:{id:'visit-id',member_event_ids:['event-id']},classification_count:3,classification_deferred:0,media_index:0,candidates:[],clock_ms:now.toMillis(),last_heartbeat:now.toMillis(),dates:['2026-11-06'],local_day_ends:{'2026-11-06':'2026-11-07'}};
+ context.advance(s,{statusCode:200,body:{media:[{id:'media-id',status:'ready',sha256:'fixture'}]}},now);
+ assert.equal(s.classification_deferred,1);
+ assert.equal(s.request.tag,'prepare');
+});
+
+test('pending classifications prevent premature delivery even for a send-enabled request',()=>{
+ const s={cfg:{...cfg,notifications_enabled:true,delivery_verified:true},run:{...run,notification_permitted:true},dry_run:false,notify:true,local_date:'2026-11-07',actual_today:'2026-11-07',classification_deferred:1,errors:[]};
+ assert.equal(context.notificationAllowed(s),false);
+ s.classification_deferred=0;assert.equal(context.notificationAllowed(s),true);
+});

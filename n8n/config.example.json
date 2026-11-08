@@ -32,7 +32,7 @@
   "model": "qwen3-vl:8b-instruct",
   "prompt_version": "station-observation-v2",
   "inference_enabled": true,
-  "max_classifications_per_run": 20,
+  "max_classifications_per_run": 3,
   "notifications_enabled": false,
   "delivery_verified": false,
   "bbox_verified": false,

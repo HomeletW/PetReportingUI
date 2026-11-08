@@ -98,8 +98,14 @@ function notificationService(cfg) {
   return service.slice('notify.'.length);
 }
 
-function notificationAllowed(state) {
-  return state.cfg.notifications_enabled === true && state.cfg.delivery_verified === true && state.run.notification_permitted === true && state.dry_run === false && state.notify === true && state.local_date === state.actual_today;
+function selectRunOptions(cfg, intent, localDate) {
+  if(intent == null)return {...(cfg.run_options || {}),dry_run:true,notify:false};
+  if(!['manual_batch','manual_send'].includes(intent) || !/^\d{4}-\d{2}-\d{2}$/.test(localDate || ''))throw new Error('invalid_manual_run_request');
+  return {dry_run:intent==='manual_batch',notify:intent==='manual_send',local_date:localDate,mode:'auto'};
 }
 
-if (typeof module !== 'undefined') module.exports = {normalize,groupEvents,initialWindows,acceptPage,selectDates,safeModelResult,observationPrompt,inputFingerprint,notificationService,notificationAllowed};
+function notificationAllowed(state) {
+  return (state.classification_deferred || 0) === 0 && !(state.errors?.length) && state.cfg.notifications_enabled === true && state.cfg.delivery_verified === true && state.run.notification_permitted === true && state.dry_run === false && state.notify === true && state.local_date === state.actual_today;
+}
+
+if (typeof module !== 'undefined') module.exports = {normalize,groupEvents,initialWindows,acceptPage,selectDates,safeModelResult,observationPrompt,inputFingerprint,notificationService,selectRunOptions,notificationAllowed};
