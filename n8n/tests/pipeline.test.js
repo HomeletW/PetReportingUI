@@ -94,3 +94,32 @@ test('source windows cover one completed day plus boundary context',()=>{
  assert.ok(s.request.body.after>s.query_lower-0.001);
  assert.ok(s.request.body.before<s.query_upper+0.001);
 });
+
+test('notification calls exactly the selected allowlisted group and preserves mobile links',()=>{
+ for(const group of ['all_devices','apple_devices','android_devices']){
+   const s={cfg:{...cfg,notification_service:'notify.'+group},seq:0,execution_id:'notify',local_date:'2026-11-07',request:{tag:'delivery_claim'},selected_report:{summary:'Fixture summary',url:'http://localhost:8092/reports/daily/2026-11-06'}};
+   context.advance(s,{statusCode:200,body:{may_send:true,attempt_id:'fixture-attempt'}},now);
+   assert.equal(s.request.tag,'delivery_send');
+   assert.equal(s.request.path,'/api/services/notify/'+group);
+   assert.equal(s.request.body.data.url,s.selected_report.url);
+   assert.equal(s.request.body.data.clickAction,s.selected_report.url);
+ }
+ assert.throws(()=>context.initialize({...cfg,notification_service:'notify.unapproved'},{},now,'invalid'));
+});
+
+test('replayed or denied delivery claims never reach a notification service',()=>{
+ for(const response of [{statusCode:200,body:{may_send:false}},{statusCode:200,headers:{'idempotency-replayed':'true'},body:{may_send:true}}]){
+   const s={cfg,seq:0,execution_id:'replay',request:{tag:'delivery_claim'},dry_run:false};
+   context.advance(s,response,now);
+   assert.equal(s.request.tag,'cleanup');
+ }
+});
+
+test('notification failures are recorded as unknown without a second send',()=>{
+ for(const response of [{error:'fixture timeout'},{statusCode:500,body:{}}]){
+   const s={cfg,run,seq:0,execution_id:'error',request:{tag:'delivery_send'},delivery_attempt:'fixture-attempt'};
+   context.advance(s,response,now);
+   assert.equal(s.request.tag,'delivery_result');
+   assert.equal(s.request.body.result,'unknown');
+ }
+});

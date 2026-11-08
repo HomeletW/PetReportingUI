@@ -1,11 +1,10 @@
 from contextlib import asynccontextmanager
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 import hashlib
 import hmac
 import secrets
 import time
 from urllib.parse import parse_qs, urlparse
-from zoneinfo import ZoneInfo
 from pathlib import Path
 from uuid import UUID
 
@@ -21,6 +20,7 @@ from .api import readiness, router
 from .config import settings
 from .core import fail
 from .evidence import FrigateClient, media_path
+from .timeline import day_timeline
 
 ROOT = Path(__file__).parent
 
@@ -221,12 +221,8 @@ def dated_report(kind: str, local_date: date, request: Request):
                 .first()
             )
             neighbors[label] = report_path(neighbor) if neighbor else None
-        visits = sorted(
-            row["facts"].get("visits", []), key=lambda v: (datetime.fromisoformat(v["start"]), v["id"])
-        )
-        for visit in visits:
-            local = datetime.fromisoformat(visit["start"]).astimezone(ZoneInfo(row["timezone"]))
-            visit["clock"] = local.strftime("%I:%M %p").lstrip("0")
+        timeline = day_timeline(row["facts"].get("visits", []), row["local_start"], row["timezone"])
+        visits = timeline["visits"]
         return templates.TemplateResponse(
             request=request,
             name="report.html",
@@ -234,6 +230,7 @@ def dated_report(kind: str, local_date: date, request: Request):
                 "report": row,
                 "pet_name": settings().pet_name,
                 "visits": visits,
+                "day_timeline": timeline,
                 "daily_links": {str(d["local_start"]): report_path(d) for d in daily},
                 "neighbors": neighbors,
             },

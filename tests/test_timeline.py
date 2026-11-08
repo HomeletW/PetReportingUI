@@ -1,0 +1,47 @@
+from datetime import date
+
+from petreport.timeline import day_timeline
+
+
+def event(id, start):
+    return {"id": id, "start": start, "kind": "feeder"}
+
+
+def test_day_positions_periods_and_gaps():
+    data = day_timeline(
+        [event("late", "2026-11-07T01:00:00+00:00"), event("early", "2026-11-06T05:30:00+00:00")],
+        date(2026, 11, 6),
+        "America/Toronto",
+    )
+    assert [v["id"] for v in data["visits"]] == ["early", "late"]
+    assert data["hours"] == 24
+    assert data["visits"][0]["x"] == 51.5
+    assert data["visits"][1]["gap_label"] == "19h 30m"
+    assert data["periods"][0]["visits"][0]["id"] == "early"
+    assert data["periods"][3]["visits"][0]["id"] == "late"
+    assert data["next_date"] == date(2026, 11, 7)
+    assert data["ticks"][0]["label"] == "00:00" and data["ticks"][-1]["label"] == "24:00"
+
+
+def test_clock_changes_use_elapsed_time_and_disambiguate_repeated_hours():
+    data = day_timeline(
+        [event("first", "2026-11-01T05:30:00+00:00"), event("second", "2026-11-01T06:30:00+00:00")],
+        date(2026, 11, 1),
+        "America/Toronto",
+    )
+    assert data["hours"] == 25
+    assert data["visits"][0]["clock"] == "1:30 AM EDT"
+    assert data["visits"][1]["clock"] == "1:30 AM EST"
+    assert data["visits"][0]["x"] < data["visits"][1]["x"]
+    spring = day_timeline([], date(2026, 3, 8), "America/Toronto")
+    assert spring["hours"] == 23
+
+
+def test_midnight_continuation_is_anchored_to_start_and_empty_periods_remain_visible():
+    data = day_timeline(
+        [event("continued", "2026-11-06T04:59:00+00:00")], date(2026, 11, 6), "America/Toronto"
+    )
+    assert data["visits"][0]["x"] == 32
+    assert len(data["periods"]) == 4
+    assert len(data["periods"][0]["visits"]) == 1
+    assert all(not period["visits"] for period in data["periods"][1:])

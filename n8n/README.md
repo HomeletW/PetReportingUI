@@ -26,7 +26,7 @@ Reuse these encrypted n8n credentials by name:
 - **Pet Reporting API**: Simplified Custom Auth (`httpTemplatedCustomAuth`), template `{"headers":{"Authorization":"Bearer {{api_key}}"}}`, with the service token only in Placeholder Values.
 - **Pet Reporting Frigate Login**: the same credential type, template `{"body":{"user":"{{username}}","password":"{{password}}"}}`, with username/password only in Placeholder Values.
 - **Ollama account**: existing `ollamaApi` credential. The initial vision model is `qwen3-vl:8b-instruct`, discovered from the instance catalog.
-- **Pet Reporting Home Assistant**: a separate credential is required before delivery is enabled. Use an Authorization Bearer header template and a Home Assistant long-lived token in Placeholder Values. Read `/api/services` and confirm `notify.all_devices` before setting `delivery_verified: true`.
+- **Home Assistant account** (`homeAssistantApi`): select your existing Home Assistant connection on **Notify report devices**. The native node obtains its host and token from the encrypted credential store. Verify the `notify` service catalog before setting `delivery_verified: true`.
 
 Assign the credentials to their respective HTTP nodes after SDK creation. Dynamic URLs cannot always be auto-matched by n8n. Do not put auth secrets in Set/Code nodes, pinned data or HTTP parameters. Frigate session cookies exist only in runtime request state, are cleared before the summary, and are never sent to the report API or placed in report links.
 
@@ -83,3 +83,7 @@ python3 n8n/build.py
 The Node tests cover fragmentation, station isolation, ongoing tracks, cross-midnight ownership, DST, saturated timestamp ties, invalid model evidence, dry-run guards and a simulated complete pipeline. A pinned n8n empty-day test verifies the native loop without contacting external services. The server's PostgreSQL suite covers authenticated visit-cache metadata and sanitized failure diagnostics.
 
 The SDK must pass both node-config validation and workflow validation before saving. Build/save never means publish. Keep the workflow inactive until real snapshots, classification output, boundary cases, coverage wording, thresholds, Home Assistant service/group membership and phone behavior have been reviewed.
+
+### Notification groups
+
+Set `notification_service` in **Deployment settings** to exactly one of `notify.all_devices` (default), `notify.apple_devices`, or `notify.android_devices`. The workflow calls that group once; it never fans out to overlapping groups. The payload includes a report link for both iOS (`url`) and Android (`clickAction`). Changing the group does not reset the server’s household/date delivery fence. Native notification calls have retries disabled; ambiguous failures remain `unknown` and are not automatically resent. Manual tests keep notifications off.

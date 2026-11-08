@@ -92,8 +92,14 @@ function inputFingerprint(visit, media, cfg) {
   return 'fnv1a64:'+hash.toString(16).padStart(16,'0');
 }
 
+function notificationService(cfg) {
+  const service=cfg.notification_service || 'notify.all_devices';
+  if(!['notify.all_devices','notify.apple_devices','notify.android_devices'].includes(service))throw new Error('invalid_notification_service');
+  return service.slice('notify.'.length);
+}
+
 function notificationAllowed(state) {
   return state.cfg.notifications_enabled === true && state.cfg.delivery_verified === true && state.run.notification_permitted === true && state.dry_run === false && state.notify === true && state.local_date === state.actual_today;
 }
 
-if (typeof module !== 'undefined') module.exports = {normalize,groupEvents,initialWindows,acceptPage,selectDates,safeModelResult,observationPrompt,inputFingerprint,notificationAllowed};
+if (typeof module !== 'undefined') module.exports = {normalize,groupEvents,initialWindows,acceptPage,selectDates,safeModelResult,observationPrompt,inputFingerprint,notificationService,notificationAllowed};

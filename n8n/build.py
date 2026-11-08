@@ -281,25 +281,29 @@ add(
 )
 add(
     "notify",
-    "Send approved family report",
-    "n8n-nodes-base.httpRequest",
-    4.5,
+    "Notify report devices",
+    "n8n-nodes-base.homeAssistant",
+    1,
     {
-        "method": "POST",
-        "url": Expr('{{ $json.cfg.home_assistant_url + "/api/services/notify/all_devices" }}'),
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpTemplatedCustomAuth",
-        "sendBody": True,
-        "contentType": "json",
-        "specifyBody": "json",
-        "jsonBody": Expr("{{ JSON.stringify($json.request.body) }}"),
-        "options": {**opts, "timeout": 30000},
+        "resource": "service",
+        "operation": "call",
+        "domain": "notify",
+        "service": Expr("{{ $json.request.path.split('/').pop() }}"),
+        "serviceAttributes": {
+            "attributes": [
+                {"name": "title", "value": Expr("{{ $json.request.body.title }}")},
+                {"name": "message", "value": Expr("{{ $json.request.body.message }}")},
+                {"name": "data", "value": Expr("{{ $json.request.body.data }}")},
+            ]
+        },
     },
-    [{"statusCode": 200, "body": []}],
-    {"httpTemplatedCustomAuth": "Pet Reporting Home Assistant"},
+    [{}],
+    {"homeAssistantApi": "Home Assistant account"},
     onError="continueRegularOutput",
     retryOnFail=False,
+    alwaysOutputData=True,
 )
+
 summary = "const s=$input.first().json; return [{json:{run_id:s.run?.run_id,dry_run:s.dry_run,local_date:s.local_date,status:s.failure?'failed':s.errors.length?'partial':'complete',errors:[...new Set(s.errors)],review_clusters:s.review_clusters,classification_failures:s.classification_failures,reports:s.reports,selected_report:s.selected_report || null,notification_enabled:s.cfg.notifications_enabled && s.cfg.delivery_verified}}];"
 add("complete", "Run summary", "n8n-nodes-base.code", 2, {"mode": "runOnceForAllItems", "jsCode": summary})
 lines = [
@@ -309,7 +313,7 @@ for var, value in nodes:
     fn = "trigger" if var in ("manual", "schedule") else "switchCase" if var == "dispatch" else "node"
     lines.append("const " + var + " = " + fn + "(" + emit(value) + ");")
 lines.append(
-    "const note = sticky('## Inactive draft\\nManual runs default to dry_run=true, notify=false. Validate footage before activation. Home Assistant setup and service verification are required before delivery. Do not export installation settings or credentials to a public repository.');"
+    "const note = sticky('## Inactive draft\\nManual runs default to dry_run=true, notify=false. Validate footage before activation. Select one notify group: all_devices (default), apple_devices, or android_devices. Verify the connection before delivery. Do not export installation settings or credentials to a public repository.');"
 )
 lines.append("export default workflow('pet-reporting-morning','Pet Journal · Morning reports')")
 lines += [

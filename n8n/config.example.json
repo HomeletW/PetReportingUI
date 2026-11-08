@@ -35,9 +35,9 @@
   "max_classifications_per_run": 20,
   "notifications_enabled": false,
   "delivery_verified": false,
-  "home_assistant_url": "https://home-assistant.example.invalid",
   "bbox_verified": false,
   "clip_verified": false,
   "boundary_context_seconds": 300,
-  "max_state_bytes": 500000
+  "max_state_bytes": 500000,
+  "notification_service": "notify.all_devices"
 }

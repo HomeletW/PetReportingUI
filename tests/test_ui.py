@@ -25,6 +25,9 @@ def test_date_routes_timeline_and_weekly_links(pgclient):
     assert 'aria-haspopup="dialog"' in page.text
     assert "<dialog" in page.text and "8:00 AM" in page.text
     assert "/static/favicon.png" in page.text
+    assert "The whole day" in page.text and "24:00" in page.text
+    assert "Midnight · next day" in page.text
+    assert "Take a closer look" not in page.text
     week = pgclient.get(f"/reports/{weekly['report_id']}")
     assert "/reports/daily/2026-11-06" in week.text
     assert "1 of 7 days fully collected" in week.text

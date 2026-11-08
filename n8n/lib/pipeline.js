@@ -29,6 +29,7 @@ function withLease(state, value) {
 }
 
 function initialize(cfg, input, now, executionId) {
+  notificationService(cfg);
   const today = now.setZone(cfg.timezone).startOf('day');
   const date = input.local_date || today.toISODate();
   const day = calendar(date, now, cfg.timezone);
@@ -291,7 +292,7 @@ function advance(state, response, now) {
     case 'delivery_claim': {
       if(!body.may_send || response.headers?.['idempotency-replayed']==='true')return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
       state.delivery_attempt=body.attempt_id;
-      return request(state,'notify','POST','/api/services/notify/all_devices',{title:'Pet activity journal',message:state.selected_report.summary,data:{url:state.selected_report.url,clickAction:state.selected_report.url,tag:`pet-report-${state.local_date}`}},'delivery_send');
+      return request(state,'notify','POST','/api/services/notify/'+notificationService(state.cfg),{title:'Pet activity journal',message:state.selected_report.summary,data:{url:state.selected_report.url,clickAction:state.selected_report.url,tag:`pet-report-${state.local_date}`}},'delivery_send');
     }
     case 'delivery_result': if(body.state==='unknown')state.errors.push('delivery_unknown');return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
     case 'cleanup': return reportRequest(state,'POST',`/runs/${state.run.run_id}/finish`,{status:state.errors.length?'partial':'complete',stage:'finished',error_codes:[...new Set(state.errors)]},'finish');
