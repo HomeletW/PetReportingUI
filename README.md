@@ -2,7 +2,7 @@
 
 A LAN-only FastAPI server for the homelab pet-report pipeline. It stores Frigate source events and reconciled visits in **external PostgreSQL**, caches evidence on disk, and renders daily/weekly reports. Configuration and secrets are YAML. No Redis, SQLite, SPA, collector schedule, inference agent, or notification sender is included.
 
-n8n owns collection/pagination, grouping, inference, report selection, and the morning schedule. The [n8n implementation and setup guide](n8n/README.md) includes portable inactive processor/manual-run workflows, deterministic logic, and tests. Deployment-specific settings and credential values stay outside this public repository.
+n8n owns collection/pagination, grouping, inference, report selection, and the morning schedule. The [n8n implementation and setup guide](n8n/README.md) includes a portable inactive workflow with live/dry-run modes, deterministic logic, and tests. Deployment-specific settings and credential values stay outside this public repository.
 
 ## Deployment
 

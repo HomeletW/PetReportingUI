@@ -59,3 +59,17 @@ test('processing-only validation drains all batches without ever enabling notifi
  advanceBatches(s,result(2,0),now);
  assert.equal(s.action,1);assert.equal(s.phase,'classify');
 });
+
+test('one workflow supports a real manual run and an explicit dry-run setting',()=>{
+ const {manualBatchPlan}=require('../lib/batches');
+ const live=manualBatchPlan({timezone:cfg.timezone,max_batches:120,dry_run:false},'same-workflow',now);
+ assert.equal(live.cfg.report_workflow_id,'same-workflow');
+ assert.equal(live.cfg.send_notification,true);
+ advanceBatches(live,result(0,0),now);
+ assert.equal(live.phase,'send');
+ const dry=manualBatchPlan({timezone:cfg.timezone,max_batches:120,dry_run:true},'same-workflow',now);
+ assert.equal(dry.cfg.send_notification,false);
+ advanceBatches(dry,result(0,0),now);
+ assert.equal(dry.action,1);
+ assert.equal(dry.phase,'classify');
+});

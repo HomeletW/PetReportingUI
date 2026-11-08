@@ -5,6 +5,10 @@ function newBatchPlan(cfg, now) {
   return {cfg,local_date:now.setZone(cfg.timezone).toISODate(),phase:'classify',action:0,batches:0,previous_deferred:null,total_classified:0,result:null};
 }
 
+function manualBatchPlan(cfg, workflowId, now) {
+  return newBatchPlan({...cfg,report_workflow_id:workflowId,send_notification:cfg.dry_run!==true},now);
+}
+
 function advanceBatches(state, result, now) {
   if(now.setZone(state.cfg.timezone).toISODate()!==state.local_date)throw new Error('manual_run_crossed_midnight');
   if(result.status!=='complete' || result.errors?.length)throw new Error('report_batch_incomplete');
@@ -29,4 +33,4 @@ function advanceBatches(state, result, now) {
   return state;
 }
 
-if(typeof module!=='undefined')module.exports={newBatchPlan,advanceBatches};
+if(typeof module!=='undefined')module.exports={newBatchPlan,manualBatchPlan,advanceBatches};
