@@ -445,3 +445,17 @@ def test_boundary_expansion_and_ongoing(pgclient):
         params={"start": "2026-11-06T05:00:00Z", "end": "2026-11-07T05:00:00Z", "limit": 1},
     )
     assert listed.status_code == 200 and listed.json()["events"][0]["event_id"] == ev["id"]
+
+
+def test_readiness_migrated_and_missing_schema(pgclient):
+    from sqlalchemy import text
+
+    response = pgclient.get("/internal/v1/readiness")
+    assert response.status_code == 200
+    assert response.json()["ready"] is True
+    assert response.json()["checks"]["database"] == "ready"
+    with db.engine().begin() as connection:
+        connection.execute(text("DROP TABLE alembic_version"))
+    response = pgclient.get("/internal/v1/readiness")
+    assert response.status_code == 503
+    assert response.json()["checks"]["database"] == "migration_required"

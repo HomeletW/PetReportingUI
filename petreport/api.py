@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select, update, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -717,8 +717,14 @@ def readiness():
     }
     try:
         with db.sessions()() as session:
-            version = session.execute(db.text("SELECT version_num FROM alembic_version")).scalar_one()
-            checks["database"] = "ready" if version == "0001" else "migration_required"
+            migrated = session.execute(text("SELECT to_regclass('alembic_version') IS NOT NULL")).scalar_one()
+            if migrated:
+                version = session.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).scalar_one_or_none()
+                checks["database"] = "ready" if version == "0001" else "migration_required"
+            else:
+                checks["database"] = "migration_required"
     except (SQLAlchemyError, RuntimeError):
         pass
     try:
