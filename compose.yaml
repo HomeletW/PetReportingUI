@@ -1,0 +1,25 @@
+name: pet-reporting
+services:
+  server:
+    image: pet-reporting:0.1.0
+    build: .
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      # Loopback by default. Set a LAN bind address only in your local .env file.
+      - "${PETREPORT_BIND_ADDRESS:-127.0.0.1}:8092:8092"
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./secrets.yaml:/config/secrets.yaml:ro
+      - ./media:/data/media
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

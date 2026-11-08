@@ -1,0 +1,14 @@
+name: Server checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  postgres-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run isolated database and server checks
+        run: docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
+      - name: Clean test containers
+        if: always()
+        run: docker compose -f compose.test.yaml down

@@ -1,0 +1,30 @@
+household_id: home
+source_id: frigate-home
+timezone: America/Toronto
+public_base_url: http://localhost:8092
+media_root: /data/media
+pet_id: coconut
+pet_name: Coconut
+stations:
+  - id: feeder
+    camera: feeder_camera
+    zone: feeder
+    kind: feeder
+  - id: litterbox
+    camera: litterbox_camera
+    zone: litterbox
+    kind: litterbox
+lease_seconds: 300
+report_retention_days: 90
+normalized_record_retention_days: 365
+draft_media_grace_days: 7
+notifications_enabled: false
+frigate:
+  base_url: https://frigate.example.invalid
+  allowed_host: frigate.example.invalid
+  username: '' # Set your Frigate account locally
+  bbox_verified: false
+  clip_verified: false
+  timeout_seconds: 30
+  max_snapshot_bytes: 10000000
+  max_clip_bytes: 100000000

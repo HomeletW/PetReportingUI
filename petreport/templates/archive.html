@@ -1,0 +1,4 @@
+{% extends 'base.html' %}{% block content %}
+<p class="eyebrow">THE LITTLE MOMENTS</p><h1>A day in {{ pet_name }}’s life.</h1><p class="intro">Visits, snapshots, and a closer look at the everyday.</p>
+{% if degraded %}<aside role="status"><strong>The journal is waiting for its database.</strong><p>The server is running. Configure PostgreSQL and run the database migration to start saving reports.</p></aside>{% elif not reports %}<aside><strong>A quiet page, for now.</strong><p>No reports have been published yet. Once the pipeline saves a report, you’ll find it here.</p></aside>{% endif %}
+<div class="archive">{% for report in reports %}<a class="archive-card" href="/reports/{{ report.id }}"><span class="eyebrow">{{ report.kind }} journal · revision {{ report.revision }}</span><h2>{{ report.local_start.strftime('%B %d, %Y') }}</h2><p>{{ report.narrative or 'Activity report' }}</p><span class="link">Open journal →</span></a>{% endfor %}</div>{% endblock %}
