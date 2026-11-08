@@ -123,3 +123,11 @@ docker compose -f compose.test.yaml down
 Local tests skip DB cases unless `TEST_DATABASE=1`; the full Compose suite migrates an isolated ephemeral PostgreSQL 17 database and tests idempotency, fencing/concurrency, transactional reconciliation, report snapshots, classification evidence, escaped HTML, DST, boundary continuation, media visibility/ranges, shared-media retention/recovery, and delivery replay/unknown semantics. Test credentials are synthetic and have no deployment access.
 
 Remaining operational acceptance includes installed bbox/clip support and codecs, footage-based grouping thresholds, Ollama inference accuracy, Home Assistant catalog/device checks, phone review, and coordinated production backup/restore. Validate each deployment independently. No n8n workflow or family notification is activated by this server.
+
+### Journal UI
+
+`/journal` lists saved daily and weekly reports; `/` redirects there. Date-based pages use `/reports/daily/YYYY-MM-DD` and `/reports/weekly/YYYY-MM-DD` (the week’s first date). Existing UUID report links redirect to the dated page. Daily moments open in keyboard-accessible dialogs; narrow screens use a single-column timeline. Weekly pages summarize collection completeness and link to available daily journals.
+
+`GET /api/health` returns database/migration and writable-media readiness with HTTP 200 or 503. `/healthz` remains the lightweight liveness probe.
+
+Each report has a **Delete report** link leading to a separate confirmation page. Confirmation expires after 15 minutes and becomes invalid if the report revision changes. Deletion hides the report and clears its saved snapshots, preserving source events, visits, shared media, and the delivery ledger. Running the pipeline for the same date can regenerate the report. This follows the existing LAN-trusted access model: anyone who can view the journal can confirm deletion. Keep the service behind your LAN or an authenticated proxy.
