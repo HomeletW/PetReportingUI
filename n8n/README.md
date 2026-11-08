@@ -64,6 +64,12 @@ Group membership is station-specific and deterministic by start time then ID. Fi
 
 The 60-second threshold is provisional: compare 30/60/120-second grouping against footage before activation. Model labels are suggestions; one snapshot may be insufficient. Unclassified visits retain unknown behavior. Errors, missing evidence, the run loop’s bounded pass limit, or a no-progress condition stop processing instead of silently treating unfinished work as complete. Older reports are not automatically backfilled. Inference fingerprints are deterministic cache identifiers, not security hashes; they include evidence SHA-256, grouping membership/version, model name and prompt version. A model digest is not exposed by the node catalog; change the prompt/config version or model tag when replacing model weights.
 
+## Notification copy and icon
+
+Notifications use a friendly, dated daily/weekly title, the saved report’s camera visit counts, a short note when collection is partial, emoji, and a trailing report URL. They do not infer meals, health, or behavior from visit counts. The portrait already hosted at `/static/icon.png` is passed as `icon_url`, with `mdi:cat` as the status-bar icon. Display depends on the installed Home Assistant Companion app and OS.
+
+For a notification-only manual run, start the existing **Morning schedule · 08:00** trigger manually; the saved-report path and once-per-day delivery guard still apply. This does not force a resend of a notification already delivered today.
+
 ## Privacy and execution retention
 
 Set workflow settings before live testing or publication:

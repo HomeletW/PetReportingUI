@@ -153,7 +153,7 @@ test('morning notification uses saved Sunday weekly report without recollection 
    }
    if(tag==='claim')body={...run,notification_permitted:true};
    if(tag==='delivery_claim')body={may_send:true,attempt_id:'delivery-test'};
-   if(tag==='delivery_send')assert.equal(s.request.body.message,'Saved summary');
+   if(tag==='delivery_send'){assert.ok(s.request.body.message.endsWith(s.selected_report.url));assert.ok(!s.request.body.message.includes('Saved summary'));}
    if(tag==='cleanup')assert.equal(s.request.body.dry_run,false);
    s=context.advance(s,{statusCode:200,body},sunday);
  }
@@ -179,4 +179,27 @@ test('unfinished classification batches are durably marked as classify, not fini
  context.advance(s,{statusCode:200,body:{}},now);
  assert.equal(s.request.tag,'finish');
  assert.equal(s.request.body.stage,'classify');
+});
+
+test('friendly notification uses saved counts, partial coverage, portrait, and a trailing report link',()=>{
+ const s={cfg,local_date:'2026-11-07',selected_kind:'daily',selected_report:{url:'https://example.invalid/reports/daily/2026-11-06',notification:{pet_name:'Coconut',kind:'daily',local_start:'2026-11-06',local_end:'2026-11-07',counts:{feeder:35,litterbox:4},collection_status:'partial',icon_url:'https://example.invalid/static/icon.png'}}};
+ const payload=context.notificationPayload(s,now);
+ assert.match(payload.title,/Nov 6, 2026.*Coconut.*available!/);
+ assert.match(payload.message,/35 visits by the feeder and 4 litterbox visits/);
+ assert.match(payload.message,/partial day/);
+ assert.match(payload.message,/💛/);
+ assert.ok(payload.message.endsWith(s.selected_report.url));
+ assert.ok(!payload.message.includes('Tracking bounds'));
+ assert.equal(payload.data.icon_url,s.selected_report.notification.icon_url);
+ assert.equal(payload.data.notification_icon,'mdi:cat');
+ assert.equal(payload.data.clickAction,s.selected_report.url);
+});
+
+test('weekly copy names the actual week, handles singular counts, and follows the configured pet name',()=>{
+ const s={cfg,local_date:'2026-11-08',selected_kind:'weekly',selected_report:{url:'https://example.invalid/week',notification:{pet_name:'Mochi',kind:'weekly',local_start:'2026-11-01',local_end:'2026-11-08',counts:{feeder:1,litterbox:0},collection_status:'complete',icon_url:'https://example.invalid/static/icon.png'}}};
+ const payload=context.notificationPayload(s,now);
+ assert.match(payload.title,/Nov 1–Nov 7, 2026 weekly journal for Mochi/i);
+ assert.match(payload.message,/Mochi’s week/);
+ assert.match(payload.message,/1 visit by the feeder and 0 litterbox visits/);
+ assert.ok(!payload.message.includes('partial'));
 });

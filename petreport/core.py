@@ -68,6 +68,20 @@ def stale_for_visits(session, ids):
         )
 
 
+def notification_context(row):
+    """Compact saved facts for notification copy; no activity images or raw events."""
+    cfg = settings()
+    return {
+        "pet_name": cfg.pet_name,
+        "kind": row["kind"],
+        "local_start": row["local_start"].isoformat(),
+        "local_end": row["local_end"].isoformat(),
+        "counts": row["facts"]["counts"],
+        "collection_status": row["facts"]["collection_status"],
+        "icon_url": cfg.public_base_url.rstrip("/") + "/static/icon.png",
+    }
+
+
 def template_summary(facts):
     counts = facts["counts"]
     prefix = "Incomplete collection. " if facts["collection_status"] != "complete" else ""

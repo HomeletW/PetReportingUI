@@ -22,6 +22,7 @@ from .core import (
     fail,
     lease,
     lock,
+    notification_context,
     report_url,
     stale_for_visits,
     template_summary,
@@ -615,6 +616,7 @@ def finalize(report_id: UUID, body: s.Finalize, session=Depends(session_for)):
         "revision": row["revision"],
         "url": report_url(report_id),
         "summary": summary,
+        "notification": notification_context(row),
         "usable": bool(row["facts"]["visits"]) or row["facts"]["collection_status"] == "complete",
     }
 
@@ -661,6 +663,7 @@ def report_for_delivery(local_send_date: date, kind: Literal["daily", "weekly"])
             "revision": row["revision"],
             "url": report_url(row["id"]),
             "summary": row["narrative"],
+            "notification": notification_context(row),
             "usable": bool(row["facts"].get("visits")) or row["facts"].get("collection_status") == "complete",
         }
 

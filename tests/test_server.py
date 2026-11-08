@@ -482,6 +482,10 @@ def test_saved_notification_requires_finished_live_generation(pgclient):
     assert saved["available"] is True and saved["usable"] is True
     assert saved["report_id"] == daily["report_id"]
     assert "summary" in saved and "facts" not in saved
+    assert saved["notification"]["pet_name"] == "Coconut"
+    assert saved["notification"]["local_start"] == "2026-11-06"
+    assert saved["notification"]["counts"]["feeder"] == 1
+    assert saved["notification"]["icon_url"].endswith("/static/icon.png")
     assert c.get(path.replace("kind=daily", "kind=weekly")).json()["available"] is False
     with db.sessions().begin() as session:
         session.execute(update(db.reports).values(status="deleted"))

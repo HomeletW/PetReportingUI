@@ -168,6 +168,30 @@ function prepareNext(state) {
   return reportRequest(state,'POST','/reports/prepare',state.current_report,'prepare');
 }
 
+function notificationPayload(state, now) {
+  const report=state.selected_report;
+  const info=report.notification || {};
+  const name=info.pet_name || state.cfg.pet_name || 'Coconut';
+  const weekly=(info.kind || state.selected_kind)==='weekly';
+  const end=calendar(info.local_end || state.local_date,now,state.cfg.timezone).minus({days:1});
+  const start=calendar(info.local_start || end.minus({days:weekly?6:0}).toISODate(),now,state.cfg.timezone);
+  const period=weekly ? start.toFormat(start.year===end.year?'MMM d':'MMM d, yyyy')+'–'+end.toFormat('MMM d, yyyy') : start.toFormat('MMM d, yyyy');
+  const title=`New ${period}${weekly?' weekly':''} journal for ${name} available! 🐾`;
+  const counts=info.counts;
+  let message;
+  if(counts && ['feeder','litterbox'].every(k=>Number.isInteger(counts[k] ?? 0) && (counts[k] ?? 0)>=0)) {
+    const feeder=counts.feeder || 0, litter=counts.litterbox || 0;
+    const visits=n=>n===1?'visit':'visits';
+    message=`🐾 A little peek at ${name}’s ${weekly?'week':'day'}: the camera spotted ${feeder} ${visits(feeder)} by the feeder and ${litter} litterbox ${visits(litter)}.`;
+  } else {
+    message=`🐾 ${name}’s ${weekly?'weekly':'daily'} journal is ready, with the moments caught on camera.`;
+  }
+  if(info.collection_status && info.collection_status!=='complete')message+=` This is a partial ${weekly?'week':'day'}, so some moments may be missing.`;
+  message+=' Take a peek! 💛\n\n'+report.url;
+  const icon=info.icon_url || state.cfg.report_url.replace(/\/$/,'')+'/static/icon.png';
+  return {title,message,data:{url:report.url,clickAction:report.url,tag:`pet-report-${state.local_date}`,icon_url:icon,notification_icon:'mdi:cat'}};
+}
+
 function markFailed(state, code) {
   state.errors.push(code);
   if(state.run) return reportRequest(state,'POST',`/runs/${state.run.run_id}/finish`,{status:'failed',stage:state.stage,error_codes:[code],diagnostic:{request_stage:state.request.tag,http_status:state.last_status || 0,code:state.failure_kind || 'http_failure'}},'failed_finish');
@@ -313,7 +337,7 @@ function advance(state, response, now) {
       state.delivery_state=body.state || 'claimed';
       if(!body.may_send || response.headers?.['idempotency-replayed']==='true')return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
       state.delivery_attempt=body.attempt_id;
-      return request(state,'notify','POST','/api/services/notify/'+notificationService(state.cfg),{title:'Pet activity journal',message:state.selected_report.summary,data:{url:state.selected_report.url,clickAction:state.selected_report.url,tag:`pet-report-${state.local_date}`}},'delivery_send');
+      return request(state,'notify','POST','/api/services/notify/'+notificationService(state.cfg),notificationPayload(state,now),'delivery_send');
     }
     case 'delivery_result': state.delivery_state=body.state;if(body.state==='unknown')state.errors.push('delivery_unknown');return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
     case 'cleanup': return reportRequest(state,'POST',`/runs/${state.run.run_id}/finish`,{status:state.errors.length?'partial':'complete',stage:state.classification_deferred>0?'classify':'finished',error_codes:[...new Set(state.errors)]},'finish');
