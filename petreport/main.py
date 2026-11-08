@@ -18,7 +18,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from . import db
 from .api import readiness, router
 from .config import settings
-from .core import fail
+from .core import fail, lock
+from .retention import purge_media
 from .evidence import FrigateClient, media_path
 from .timeline import day_timeline
 
@@ -293,6 +294,7 @@ async def delete_report(report_id: UUID, request: Request):
     except (KeyError, ValueError, IndexError, UnicodeDecodeError):
         fail(403, "confirmation_required")
     with db.sessions().begin() as session:
+        lock(session, "household:" + settings().household_id)
         session.execute(select(db.reports.c.id).where(db.reports.c.id == str(report_id)).with_for_update())
         row = available_report(session, report_id)
         if not int(time.time()) < expires <= int(time.time()) + 900 or not hmac.compare_digest(
@@ -310,8 +312,16 @@ async def delete_report(report_id: UUID, request: Request):
                 narrative=None,
             )
         )
+        media_ids = (
+            session.execute(
+                select(db.report_media.c.media_id).where(db.report_media.c.report_id == str(report_id))
+            )
+            .scalars()
+            .all()
+        )
         for table in (db.report_media, db.report_visits, db.report_revisions):
             session.execute(delete(table).where(table.c.report_id == str(report_id)))
+        purge_media(session, media_ids)
     return RedirectResponse("/journal?deleted=1", status_code=303)
 
 

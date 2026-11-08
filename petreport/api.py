@@ -906,7 +906,7 @@ def internal_media(media_id: UUID):
 
 @router.post("/maintenance/cleanup")
 def cleanup(body: s.Cleanup, session=Depends(session_for)):
-    from .evidence import media_path
+    from .retention import purge_media
 
     cfg = settings()
     lock(session, "household:" + cfg.household_id)
@@ -925,13 +925,16 @@ def cleanup(body: s.Cleanup, session=Depends(session_for)):
         .join(db.reports, db.report_media.c.report_id == db.reports.c.id)
         .where(db.reports.c.expires_at > current)
     )
+    expired_media = select(db.report_media.c.media_id).where(db.report_media.c.report_id.in_(expired))
     candidates = (
         session.execute(
             select(db.media).where(
                 (db.media.c.status != "downloading")
                 | (db.media.c.fetched_at < current - timedelta(minutes=5)),
                 ~db.media.c.id.in_(retained),
-                db.media.c.created_at < current - timedelta(days=cfg.draft_media_grace_days),
+                (db.media.c.created_at < current - timedelta(days=cfg.draft_media_grace_days))
+                | db.media.c.id.in_(expired_media)
+                | (db.media.c.status == "pending_delete"),
             )
         )
         .mappings()
@@ -948,27 +951,11 @@ def cleanup(body: s.Cleanup, session=Depends(session_for)):
             .where(db.reports.c.id.in_(expired))
             .values(status="expired", facts={}, narrative=None)
         )
-    for row in candidates:
-        session.execute(update(db.media).where(db.media.c.id == row["id"]).values(status="pending_delete"))
-    session.commit()
-    # File removal can be retried after a crash: pending_delete remains eligible.
-    deleted_ids = []
-    failed = 0
-    for row in candidates:
-        try:
-            if row["relative_path"]:
-                media_path(row["relative_path"]).unlink(missing_ok=True)
-            deleted_ids.append(row["id"])
-        except OSError:
-            failed += 1
-    lock(session, "household:" + cfg.household_id)
-    if deleted_ids:
-        session.execute(delete(db.visit_media).where(db.visit_media.c.media_id.in_(deleted_ids)))
-        session.execute(
-            delete(db.media).where(
-                db.media.c.id.in_(deleted_ids), ~db.media.c.id.in_(select(db.report_media.c.media_id))
-            )
-        )
+    # Recover abandoned downloads before reclaiming them. The household lock stays held
+    # during local file removal, preventing another writer from attaching these images.
+    ids = [row["id"] for row in candidates]
+    session.execute(update(db.media).where(db.media.c.id.in_(ids)).values(status="pending_delete"))
+    deleted_count, failed = purge_media(session, ids)
     session.execute(
         delete(db.operations).where(
             db.operations.c.created_at < current - timedelta(days=min(7, cfg.report_retention_days))
@@ -993,7 +980,7 @@ def cleanup(body: s.Cleanup, session=Depends(session_for)):
     return {
         "dry_run": False,
         "expired_reports": len(expired),
-        "deleted_media": len(deleted_ids),
+        "deleted_media": deleted_count,
         "failed_media": failed,
     }
 

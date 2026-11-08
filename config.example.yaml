@@ -15,7 +15,7 @@ stations:
     zone: litterbox
     kind: litterbox
 lease_seconds: 300
-report_retention_days: 90
+report_retention_days: 30
 normalized_record_retention_days: 365
 draft_media_grace_days: 7
 notifications_enabled: false

@@ -217,7 +217,7 @@ def test_partial_week_no_false_zeros(pgclient):
 def test_cleanup_preserves_shared_and_recovers(pgclient):
     c = pgclient
     run, ev, _, vid = seed(c)
-    mid, path = attach_media(vid, ev["id"], created_days=10)
+    mid, path = attach_media(vid, ev["id"])
     daily = publish(c, run)
     weekly = publish(c, run, "weekly", "2026-10-31")
     with db.sessions().begin() as session:

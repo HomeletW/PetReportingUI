@@ -70,7 +70,7 @@ def test_stale_confirmation_and_deleted_media_access(pgclient):
     from sqlalchemy import update
 
     run, event, _, visit = seed(pgclient)
-    mid, _ = attach_media(visit, event["id"])
+    mid, path = attach_media(visit, event["id"])
     daily = publish(pgclient, run)
     form = confirmation(pgclient, daily["report_id"])
     target = f"/reports/{daily['report_id']}/delete"
@@ -83,3 +83,40 @@ def test_stale_confirmation_and_deleted_media_access(pgclient):
     )
     assert pgclient.post(target, data=form).status_code == 200
     assert pgclient.get(f"/media/{mid}").status_code == 404
+
+    assert not path.exists()
+    with db.sessions()() as session:
+        assert session.execute(select(db.media).where(db.media.c.id == mid)).first() is None
+
+
+def test_failed_manual_media_removal_is_retried(pgclient, monkeypatch):
+    from pathlib import Path
+    from test_server import call
+
+    run, event, _, visit = seed(pgclient)
+    mid, path = attach_media(visit, event["id"])
+    daily = publish(pgclient, run)
+    original = Path.unlink
+
+    def unavailable(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError("simulated filesystem failure")
+        return original(self, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", unavailable)
+        response = pgclient.post(
+            f"/reports/{daily['report_id']}/delete",
+            data=confirmation(pgclient, daily["report_id"]),
+        )
+        assert response.status_code == 200
+    assert path.exists()
+    with db.sessions()() as session:
+        assert (
+            session.execute(select(db.media.c.status).where(db.media.c.id == mid)).scalar_one()
+            == "pending_delete"
+        )
+    preview = call(pgclient, "/maintenance/cleanup", {"dry_run": True})
+    assert preview["media_candidates"] == 1 and path.exists()
+    assert call(pgclient, "/maintenance/cleanup", {"dry_run": False})["deleted_media"] == 1
+    assert not path.exists()

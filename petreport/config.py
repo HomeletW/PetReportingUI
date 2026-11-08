@@ -66,7 +66,7 @@ class Settings(Strict):
         ]
     )
     lease_seconds: int = Field(default=300, ge=30, le=3600)
-    report_retention_days: int = Field(default=90, ge=1)
+    report_retention_days: int = Field(default=30, ge=1)
     normalized_record_retention_days: int = Field(default=365, ge=1)
     draft_media_grace_days: int = Field(default=7, ge=1)
     notifications_enabled: bool = False

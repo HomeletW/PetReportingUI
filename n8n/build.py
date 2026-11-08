@@ -310,7 +310,7 @@ batch_common = (ROOT / "lib/batches.js").read_text().split("if(typeof module")[0
 run_mode = {"dry_run": False, "timezone": "America/Toronto", "max_batches": 120}
 add(
     "schedule",
-    "Morning schedule (inactive)",
+    "Morning schedule · 08:00",
     "n8n-nodes-base.scheduleTrigger",
     1.4,
     {
