@@ -73,3 +73,17 @@ test('one workflow supports a real manual run and an explicit dry-run setting',(
  assert.equal(dry.action,1);
  assert.equal(dry.phase,'classify');
 });
+
+test('nightly generation drains live batches without enabling a send phase',()=>{
+ const {manualBatchPlan}=require('../lib/batches');
+ const s=manualBatchPlan({timezone:cfg.timezone,max_batches:120,dry_run:false,send_notification:false,build_only:true},'same-workflow',now);
+ const options=selectRunOptions({},'build_batch',s.local_date);
+ assert.equal(options.dry_run,false);
+ assert.equal(options.notify,false);
+ advanceBatches(s,result(3,2),now);
+ assert.equal(s.phase,'classify');
+ advanceBatches(s,result(2,0),now);
+ assert.equal(s.action,1);
+ assert.equal(s.phase,'classify');
+ assert.equal(s.cfg.send_notification,false);
+});

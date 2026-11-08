@@ -35,9 +35,13 @@ function initialize(cfg, input, now, executionId) {
   const day = calendar(date, now, cfg.timezone);
   if (date > today.toISODate() || today.diff(day,'days').days > 89) throw new Error('invalid_run_date');
   const dryRun = input.dry_run !== false;
-  const state = {cfg,execution_id:String(executionId),seq:0,local_date:date,actual_today:today.toISODate(),dry_run:dryRun,notify:!dryRun && input.notify === true,requested_dates:input.backfill_dates || null,mode:input.mode || 'auto',stage:'collect',clock_ms:now.toMillis(),errors:[],reports:[],classification_failures:0,classification_count:0,classification_saved:0,classification_deferred:0,delivery_state:'not_requested',review_clusters:0,source_cookie:'',run:null};
+  const state = {cfg,execution_id:String(executionId),seq:0,local_date:date,actual_today:today.toISODate(),dry_run:dryRun,notify:!dryRun && input.notify === true,notification_only:input.notification_only===true,requested_dates:input.backfill_dates || null,mode:input.mode || 'auto',stage:'collect',clock_ms:now.toMillis(),errors:[],reports:[],classification_failures:0,classification_count:0,classification_saved:0,classification_deferred:0,delivery_state:'not_requested',review_clusters:0,source_cookie:'',run:null};
   if (!['auto','daily','weekly'].includes(state.mode)) throw new Error('invalid_report_mode');
   return request(state,'report','GET','/readiness',null,'readiness');
+}
+
+function claimRun(state) {
+  return reportRequest(state,'POST','/runs/claim',{household_id:state.cfg.household_id,local_date:state.local_date,config_hash:state.cfg.grouping_version+':'+state.cfg.prompt_version,dry_run:state.dry_run,notify:state.notify},'claim');
 }
 
 function reportRequest(state, method, path, value, tag) {
@@ -195,13 +199,29 @@ function advance(state, response, now) {
     return markFailed(state,r.kind==='source'?'collection_incomplete':'dependency_unavailable');
   }
   switch(r.tag) {
-    case 'readiness': return reportRequest(state,'POST','/runs/claim',{household_id:state.cfg.household_id,local_date:state.local_date,config_hash:state.cfg.grouping_version+':'+state.cfg.prompt_version,dry_run:state.dry_run,notify:state.notify},'claim');
+    case 'readiness': {
+      if(state.notification_only) {
+        const day=calendar(state.local_date,now,state.cfg.timezone);
+        const kind=state.mode==='auto'?(day.weekday===state.cfg.weekly_weekday?'weekly':'daily'):state.mode;
+        return reportRequest(state,'GET',`/reports/for-delivery?local_send_date=${state.local_date}&kind=${kind}`,null,'notification_report');
+      }
+      return claimRun(state);
+    }
+    case 'notification_report': {
+      if(!body.available || !body.usable)return markFailed(state,'dependency_unavailable');
+      state.selected_report=body;
+      return claimRun(state);
+    }
     case 'claim': {
       state.run=body;
       state.last_heartbeat=now.toMillis();
       const day=calendar(state.local_date,now,state.cfg.timezone);
       state.week_start=day.minus({days:7}).toISODate();
       state.selected_kind=state.mode==='auto'?(day.weekday===state.cfg.weekly_weekday?'weekly':'daily'):state.mode;
+      if(state.notification_only) {
+        if(!notificationAllowed(state))return markFailed(state,'dependency_unavailable');
+        return reportRequest(state,'POST','/deliveries/claim',{local_send_date:state.local_date,channel:'home_assistant',report_id:state.selected_report.report_id},'delivery_claim');
+      }
       return reportRequest(state,'GET',`/processing-days?local_start=${day.minus({days:7}).toISODate()}&local_end=${state.local_date}`,null,'processing');
     }
     case 'processing': {
@@ -296,7 +316,7 @@ function advance(state, response, now) {
       return request(state,'notify','POST','/api/services/notify/'+notificationService(state.cfg),{title:'Pet activity journal',message:state.selected_report.summary,data:{url:state.selected_report.url,clickAction:state.selected_report.url,tag:`pet-report-${state.local_date}`}},'delivery_send');
     }
     case 'delivery_result': state.delivery_state=body.state;if(body.state==='unknown')state.errors.push('delivery_unknown');return reportRequest(state,'POST','/maintenance/cleanup',{dry_run:state.dry_run},'cleanup');
-    case 'cleanup': return reportRequest(state,'POST',`/runs/${state.run.run_id}/finish`,{status:state.errors.length?'partial':'complete',stage:'finished',error_codes:[...new Set(state.errors)]},'finish');
+    case 'cleanup': return reportRequest(state,'POST',`/runs/${state.run.run_id}/finish`,{status:state.errors.length?'partial':'complete',stage:state.classification_deferred>0?'classify':'finished',error_codes:[...new Set(state.errors)]},'finish');
     default: throw new Error('unexpected_pipeline_stage');
   }
 }

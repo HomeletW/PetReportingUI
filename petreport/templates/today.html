@@ -4,7 +4,7 @@
 <p class="eyebrow">TODAY’S JOURNAL</p>
 <h1>Today’s journal isn’t available yet.</h1>
 <p class="intro">This morning’s report covers yesterday, {{ local_date.strftime('%B %d, %Y') }}, from midnight to midnight. It will appear here once published.</p>
-<p class="muted">The daily routine starts at 8:00 AM in {{ timezone | replace('_', ' ') }}. Processing may take a little time.</p>
+<p class="muted">Report generation starts at 12:30 AM in {{ timezone | replace('_', ' ') }}. Processing may take a little time. Notifications arrive at 8:00 AM.</p>
 <a class="button" href="/today">Check again</a>
 <a class="button" href="/journal">Browse saved journals</a>
 {% endblock %}

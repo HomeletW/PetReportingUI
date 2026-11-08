@@ -100,8 +100,8 @@ function notificationService(cfg) {
 
 function selectRunOptions(cfg, intent, localDate) {
   if(intent == null)return {...(cfg.run_options || {}),dry_run:true,notify:false};
-  if(!['manual_batch','manual_send'].includes(intent) || !/^\d{4}-\d{2}-\d{2}$/.test(localDate || ''))throw new Error('invalid_manual_run_request');
-  return {dry_run:intent==='manual_batch',notify:intent==='manual_send',local_date:localDate,mode:'auto'};
+  if(!['manual_batch','manual_send','build_batch','notify_only'].includes(intent) || !/^\d{4}-\d{2}-\d{2}$/.test(localDate || ''))throw new Error('invalid_manual_run_request');
+  return {dry_run:intent==='manual_batch',notify:['manual_send','notify_only'].includes(intent),notification_only:intent==='notify_only',local_date:localDate,mode:'auto'};
 }
 
 function notificationAllowed(state) {

@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 from uuid import UUID
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.encoders import jsonable_encoder
@@ -616,6 +617,52 @@ def finalize(report_id: UUID, body: s.Finalize, session=Depends(session_for)):
         "summary": summary,
         "usable": bool(row["facts"]["visits"]) or row["facts"]["collection_status"] == "complete",
     }
+
+
+@router.get("/reports/for-delivery")
+def report_for_delivery(local_send_date: date, kind: Literal["daily", "weekly"]):
+    cfg = settings()
+    with db.sessions()() as session:
+        # Intermediate classification batches save reports too. Only a fully finished
+        # generation run is eligible for the independent morning notification.
+        completed = session.execute(
+            select(db.runs.c.id).where(
+                db.runs.c.household_id == cfg.household_id,
+                db.runs.c.local_date == local_send_date,
+                db.runs.c.status == "complete",
+                db.runs.c.stage == "finished",
+                db.runs.c.dry_run.is_(False),
+                db.runs.c.errors == [],
+            )
+        ).first()
+        if not completed:
+            return {"available": False, "reason": "generation_not_complete"}
+        row = (
+            session.execute(
+                select(db.reports).where(
+                    db.reports.c.household_id == cfg.household_id,
+                    db.reports.c.timezone == cfg.timezone,
+                    db.reports.c.kind == kind,
+                    db.reports.c.local_start
+                    == local_send_date - timedelta(days=7 if kind == "weekly" else 1),
+                    db.reports.c.local_end == local_send_date,
+                    db.reports.c.status == "published",
+                    db.reports.c.expires_at > db.now(),
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if not row:
+            return {"available": False, "reason": "report_not_published"}
+        return {
+            "available": True,
+            "report_id": row["id"],
+            "revision": row["revision"],
+            "url": report_url(row["id"]),
+            "summary": row["narrative"],
+            "usable": bool(row["facts"].get("visits")) or row["facts"].get("collection_status") == "complete",
+        }
 
 
 @router.post("/deliveries/claim")

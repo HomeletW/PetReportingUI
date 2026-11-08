@@ -322,11 +322,48 @@ add(
     [{}],
 )
 add(
+    "nightSchedule",
+    "Report generation · 00:30",
+    "n8n-nodes-base.scheduleTrigger",
+    1.4,
+    {
+        "rule": {
+            "interval": [{"field": "days", "daysInterval": 1, "triggerAtHour": 0, "triggerAtMinute": 30}]
+        },
+        "misfirePolicy": "skip",
+    },
+    [{}],
+)
+add(
+    "nightMode",
+    "Nightly generation mode",
+    "n8n-nodes-base.set",
+    3.5,
+    {
+        "mode": "raw",
+        "jsonOutput": json.dumps({**run_mode, "send_notification": False, "build_only": True}),
+        "includeOtherFields": False,
+    },
+)
+add(
+    "morningMode",
+    "Select saved morning report",
+    "n8n-nodes-base.set",
+    3.5,
+    {
+        "mode": "raw",
+        "jsonOutput": Expr(
+            '{{ {intent: "notify_only", local_date: $now.setZone("America/Toronto").toISODate()} }}'
+        ),
+        "includeOtherFields": False,
+    },
+)
+add(
     "runMode",
     "Run mode",
     "n8n-nodes-base.set",
     3.5,
-    {"mode": "raw", "jsonOutput": json.dumps(run_mode), "includeOtherFields": False},
+    {"mode": "raw", "jsonOutput": json.dumps(run_mode), "includeOtherFields": True},
     [run_mode],
 )
 add(
@@ -359,7 +396,9 @@ add(
         "workflowInputs": {
             "mappingMode": "defineBelow",
             "value": {
-                "intent": Expr("{{ $json.phase === 'send' ? 'manual_send' : 'manual_batch' }}"),
+                "intent": Expr(
+                    "{{ $json.cfg.build_only ? 'build_batch' : ($json.phase === 'send' ? 'manual_send' : 'manual_batch') }}"
+                ),
                 "local_date": Expr("{{ $json.local_date }}"),
             },
             "schema": [
@@ -414,19 +453,20 @@ lines = [
 for var, value in nodes:
     fn = (
         "trigger"
-        if var in ("manual", "subworkflow", "schedule")
+        if var in ("manual", "subworkflow", "schedule", "nightSchedule")
         else "switchCase"
         if var in ("dispatch", "batchDispatch")
         else "node"
     )
     lines.append("const " + var + " = " + fn + "(" + emit(value) + ");")
 lines.append(
-    "const note = sticky('## Manual run and dry run\\nExecute workflow processes yesterday through successive small batches, then calls Home Assistant. Run mode: dry_run=false sends a real notification; dry_run=true processes without sending or destructive cleanup. All logic is in this workflow; batch executions call its own batch entry. Daily notification fencing prevents duplicate alerts. The morning schedule remains inactive until published.');"
+    "const note = sticky('## Manual run and dry run\\nExecute workflow processes yesterday through successive small batches, then calls Home Assistant. Run mode: dry_run=false sends a real notification; dry_run=true processes without sending or destructive cleanup. All logic is in this workflow; batch executions call its own batch entry. Daily generation runs at 00:30 without notifying. At 08:00 only the saved, fully generated report is sent. Sunday selects the weekly report. Manual run still processes and notifies; delivery fencing prevents duplicates. Schedules require publication.');"
 )
 lines.append("export default workflow('pet-reporting-morning','Pet Journal · Morning reports')")
 lines += [
     ".add(manual).to(runMode).to(batchPlan).to(batchDispatch)",
-    ".add(schedule).to(runMode)",
+    ".add(nightSchedule).to(nightMode).to(runMode)",
+    ".add(schedule).to(morningMode).to(settingsNode)",
     ".add(batchDispatch.onCase(0,runBatch.to(batchAdvance).to(batchDispatch)).onCase(1,finalSummary))",
     ".add(subworkflow).to(settingsNode).to(initializeNode).to(dispatch)",
     ".add(dispatch.onCase(0,write.to(advanceNode)).onCase(1,read.to(advanceNode)).onCase(2,login.to(advanceNode)).onCase(3,source.to(advanceNode)).onCase(4,group.to(dispatch)).onCase(5,image.to(vision).to(validateModel).to(dispatch)).onCase(6,notify.to(advanceNode)).onCase(7,complete))",

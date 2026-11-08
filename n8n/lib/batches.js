@@ -6,7 +6,7 @@ function newBatchPlan(cfg, now) {
 }
 
 function manualBatchPlan(cfg, workflowId, now) {
-  return newBatchPlan({...cfg,report_workflow_id:workflowId,send_notification:cfg.dry_run!==true},now);
+  return newBatchPlan({...cfg,report_workflow_id:workflowId,send_notification:cfg.dry_run!==true && cfg.send_notification!==false},now);
 }
 
 function advanceBatches(state, result, now) {

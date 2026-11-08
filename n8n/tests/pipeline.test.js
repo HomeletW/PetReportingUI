@@ -136,3 +136,47 @@ test('pending classifications prevent premature delivery even for a send-enabled
  assert.equal(context.notificationAllowed(s),false);
  s.classification_deferred=0;assert.equal(context.notificationAllowed(s),true);
 });
+
+test('morning notification uses saved Sunday weekly report without recollection or inference',()=>{
+ const sunday=DateTime.fromISO('2026-11-08T08:00:00',{zone:cfg.timezone});
+ const enabled={...cfg,notifications_enabled:true,delivery_verified:true};
+ const input=context.selectRunOptions(enabled,'notify_only','2026-11-08');
+ let s=context.initialize(enabled,input,sunday,'saved-notification');
+ const seen=[];
+ for(let i=0;i<20;i++){
+   const tag=s.request.tag;seen.push(tag);
+   if(tag==='done')break;
+   let body={};
+   if(tag==='notification_report'){
+     assert.match(s.request.path,/kind=weekly/);
+     body={available:true,usable:true,report_id:'saved-week',summary:'Saved summary',url:'https://example.invalid/reports/weekly/2026-11-01'};
+   }
+   if(tag==='claim')body={...run,notification_permitted:true};
+   if(tag==='delivery_claim')body={may_send:true,attempt_id:'delivery-test'};
+   if(tag==='delivery_send')assert.equal(s.request.body.message,'Saved summary');
+   if(tag==='cleanup')assert.equal(s.request.body.dry_run,false);
+   s=context.advance(s,{statusCode:200,body},sunday);
+ }
+ assert.equal(s.request.tag,'done');
+ assert.ok(seen.includes('delivery_send'));
+ assert.deepEqual(seen,['readiness','notification_report','claim','delivery_claim','delivery_send','delivery_result','cleanup','finish','done']);
+});
+
+test('missing morning report stops without claiming a run, recollecting or sending',()=>{
+ const enabled={...cfg,notifications_enabled:true,delivery_verified:true};
+ let s=context.initialize(enabled,context.selectRunOptions(enabled,'notify_only','2026-11-07'),now,'missing-report');
+ s=context.advance(s,{statusCode:200,body:{ready:true}},now);
+ assert.equal(s.request.tag,'notification_report');
+ assert.match(s.request.path,/kind=daily/);
+ s=context.advance(s,{statusCode:200,body:{available:false,reason:'generation_not_complete'}},now);
+ assert.equal(s.request.tag,'done');
+ assert.ok(s.failure);
+ assert.equal(s.run,null);
+});
+
+test('unfinished classification batches are durably marked as classify, not finished',()=>{
+ const s={cfg,run,seq:0,execution_id:'pending',request:{tag:'cleanup'},errors:[],classification_deferred:2};
+ context.advance(s,{statusCode:200,body:{}},now);
+ assert.equal(s.request.tag,'finish');
+ assert.equal(s.request.body.stage,'classify');
+});

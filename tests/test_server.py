@@ -459,3 +459,30 @@ def test_readiness_migrated_and_missing_schema(pgclient):
     response = pgclient.get("/internal/v1/readiness")
     assert response.status_code == 503
     assert response.json()["checks"]["database"] == "migration_required"
+
+
+def test_saved_notification_requires_finished_live_generation(pgclient):
+    c = pgclient
+    run, _, _, _ = seed(c)
+    daily = publish(c, run)
+    path = "/internal/v1/reports/for-delivery?local_send_date=2026-11-07&kind=daily"
+    assert c.get(path).json()["available"] is False
+    with db.sessions().begin() as session:
+        session.execute(
+            update(db.runs)
+            .where(db.runs.c.id == run["run_id"])
+            .values(
+                local_date=date(2026, 11, 7), status="complete", stage="classify", dry_run=False, errors=[]
+            )
+        )
+    assert c.get(path).json()["available"] is False
+    with db.sessions().begin() as session:
+        session.execute(update(db.runs).values(stage="finished"))
+    saved = c.get(path).json()
+    assert saved["available"] is True and saved["usable"] is True
+    assert saved["report_id"] == daily["report_id"]
+    assert "summary" in saved and "facts" not in saved
+    assert c.get(path.replace("kind=daily", "kind=weekly")).json()["available"] is False
+    with db.sessions().begin() as session:
+        session.execute(update(db.reports).values(status="deleted"))
+    assert c.get(path).json()["available"] is False
