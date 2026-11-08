@@ -126,7 +126,7 @@ Remaining operational acceptance includes installed bbox/clip support and codecs
 
 ### Journal UI
 
-`/journal` lists saved daily and weekly reports; `/` redirects there. Date-based pages use `/reports/daily/YYYY-MM-DD` and `/reports/weekly/YYYY-MM-DD` (the week’s first date). Existing UUID report links redirect to the dated page. Daily moments open in keyboard-accessible dialogs; narrow screens use a single-column timeline. Weekly pages summarize collection completeness and link to available daily journals.
+`/journal` lists saved daily and weekly reports; `/` redirects there. `/today` opens this morning’s daily report, covering yesterday midnight–midnight in the configured timezone. If that report is not published or has been deleted/expired, it shows an unavailable-yet page without falling back to an older report. Date-based pages use `/reports/daily/YYYY-MM-DD` and `/reports/weekly/YYYY-MM-DD` (the week’s first date). Existing UUID report links redirect to the dated page. Daily moments open in keyboard-accessible dialogs; narrow screens use a single-column timeline. Weekly pages summarize collection completeness and link to available daily journals.
 
 `GET /api/health` returns database/migration and writable-media readiness with HTTP 200 or 503. `/healthz` remains the lightweight liveness probe.
 

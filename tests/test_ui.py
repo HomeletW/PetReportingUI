@@ -120,3 +120,58 @@ def test_failed_manual_media_removal_is_retried(pgclient, monkeypatch):
     assert preview["media_candidates"] == 1 and path.exists()
     assert call(pgclient, "/maintenance/cleanup", {"dry_run": False})["deleted_media"] == 1
     assert not path.exists()
+
+
+def test_today_uses_morning_report_and_local_midnight(pgclient, monkeypatch):
+    from datetime import datetime, timezone
+
+    run, _, _, _ = seed(pgclient)
+    publish(pgclient, run)
+    # UTC is already Sunday, while Toronto is still Saturday: show Friday's report.
+    monkeypatch.setattr(db, "now", lambda: datetime(2026, 11, 8, 4, 30, tzinfo=timezone.utc))
+    response = pgclient.get("/today", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/reports/daily/2026-11-06"
+    assert response.headers["cache-control"] == "private, no-store"
+    assert pgclient.get("/today").status_code == 200
+    # After local midnight, the same bookmark requires Saturday's report.
+    monkeypatch.setattr(db, "now", lambda: datetime(2026, 11, 8, 5, 30, tzinfo=timezone.utc))
+    response = pgclient.get("/today")
+    assert response.status_code == 200
+    assert "Today’s journal isn’t available yet" in response.text
+    assert "November 07, 2026" in response.text
+    assert "8:00 AM" in response.text and "America/Toronto" in response.text
+    assert response.headers["cache-control"] == "private, no-store"
+
+
+def test_today_only_displays_available_household_daily_report(pgclient, monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import update
+
+    run, _, _, _ = seed(pgclient)
+    daily = publish(pgclient, run)
+    monkeypatch.setattr(db, "now", lambda: datetime(2026, 11, 7, 15, tzinfo=timezone.utc))
+    changes = [
+        {"status": "prepared"},
+        {"status": "deleted"},
+        {"status": "expired"},
+        {"expires_at": db.now() - timedelta(seconds=1)},
+        {"household_id": "other-household"},
+        {"timezone": "UTC"},
+    ]
+    for change in changes:
+        with db.sessions().begin() as session:
+            session.execute(
+                update(db.reports)
+                .where(db.reports.c.id == daily["report_id"])
+                .values(
+                    status="published",
+                    expires_at=db.now() + timedelta(days=30),
+                    household_id="home",
+                    timezone="America/Toronto",
+                )
+            )
+            session.execute(update(db.reports).where(db.reports.c.id == daily["report_id"]).values(**change))
+        response = pgclient.get("/today")
+        assert response.status_code == 200
+        assert "Today’s journal isn’t available yet" in response.text

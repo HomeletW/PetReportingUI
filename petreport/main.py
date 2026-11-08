@@ -7,6 +7,7 @@ import time
 from urllib.parse import parse_qs, urlparse
 from pathlib import Path
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
@@ -132,6 +133,36 @@ def archive(request: Request):
 
 def report_path(row):
     return f"/reports/{row['kind']}/{row['local_start'].isoformat()}"
+
+
+@app.get("/today", response_class=HTMLResponse)
+def today_journal(request: Request):
+    cfg = settings()
+    today = db.now().astimezone(ZoneInfo(cfg.timezone)).date()
+    yesterday = today - timedelta(days=1)
+    with db.sessions()() as session:
+        row = (
+            session.execute(
+                select(db.reports).where(
+                    db.reports.c.household_id == cfg.household_id,
+                    db.reports.c.timezone == cfg.timezone,
+                    db.reports.c.kind == "daily",
+                    db.reports.c.local_start == yesterday,
+                    db.reports.c.local_end == today,
+                    db.reports.c.status.in_(["published", "stale"]),
+                    db.reports.c.expires_at > db.now(),
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if row:
+            return RedirectResponse(report_path(row), status_code=307)
+    return templates.TemplateResponse(
+        request=request,
+        name="today.html",
+        context={"pet_name": cfg.pet_name, "local_date": yesterday, "timezone": cfg.timezone},
+    )
 
 
 def available_report(session, report_id):
