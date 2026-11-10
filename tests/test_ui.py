@@ -219,6 +219,22 @@ def test_grouped_visit_shows_ordered_photos_and_a_span(pgclient):
             for mid in (earlier, later)
         ],
     }
+    result["observations"].extend(
+        [
+            {
+                "behavior": "drinking",
+                "assessment": "not_observed",
+                "evidence_ids": [earlier],
+                "reason": "No water contact",
+            },
+            {
+                "behavior": "defecation",
+                "assessment": "uncertain",
+                "evidence_ids": [later],
+                "reason": "The view is obscured",
+            },
+        ]
+    )
     call(
         pgclient,
         f"/visits/{visit}/classification",
@@ -235,18 +251,31 @@ def test_grouped_visit_shows_ordered_photos_and_a_span(pgclient):
     assert report["facts"]["counts"]["feeder"] == 1
     saved = report["facts"]["visits"][0]
     assert saved["detection_count"] == 2
-    assert len(saved["classification"]["observations"]) == 1
+    assert len(saved["classification"]["observations"]) == 3
     assert saved["classification"]["observations"][0]["evidence_ids"] == [earlier, later]
     # Older report snapshots may still contain separate per-image findings.
     saved["classification"] = result
+    saved["continuation"] = True
     with db.sessions().begin() as session:
         session.execute(
             update(db.reports).where(db.reports.c.id == report["report_id"]).values(facts=report["facts"])
         )
     assert [item["id"] for item in saved["media"]] == [earlier, later]
     page = pgclient.get("/reports/daily/2026-11-06")
-    assert "2 detections" in page.text and "2 snapshots" in page.text
-    assert page.text.count("<strong>Eating</strong>") == 1
+    assert "2 detections" in page.text and "2 photos" in page.text
+    assert page.text.count("<strong>Eating</strong>") == 2  # One card badge and one detail badge.
+    for state in ("supported", "not_observed", "uncertain"):
+        assert page.text.count(f'class="behavior-badge behavior-{state}"') == 2
+    for boilerplate in (
+        "Identity:",
+        "Detections and model suggestions",
+        "swipe or use arrows",
+        "Full-context snapshot",
+        "What the evidence suggests",
+        "Continued from",
+        "Continued · not counted again",
+    ):
+        assert boilerplate not in page.text
     assert "photos-swipe" in page.text
     start, end = re.search(
         r'<line x1="([^"]+)" x2="([^"]+)" [^>]+class="map-visit feeder"', page.text
