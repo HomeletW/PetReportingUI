@@ -88,7 +88,7 @@ def template_summary(facts):
     return (
         prefix
         + f"{counts.get('feeder', 0)} feeder visits and {counts.get('litterbox', 0)} litterbox visits detected. "
-        + "Camera coverage is unknown. Tracking bounds are not behavior duration."
+        + "Camera coverage is unknown."
     )
 
 

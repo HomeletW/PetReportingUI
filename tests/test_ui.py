@@ -222,10 +222,10 @@ def test_grouped_visit_shows_ordered_photos_and_a_span(pgclient):
     result["observations"].extend(
         [
             {
-                "behavior": "drinking",
+                "behavior": "other",
                 "assessment": "not_observed",
                 "evidence_ids": [earlier],
-                "reason": "No water contact",
+                "reason": "No other activity visible",
             },
             {
                 "behavior": "defecation",
@@ -258,7 +258,11 @@ def test_grouped_visit_shows_ordered_photos_and_a_span(pgclient):
     saved["continuation"] = True
     with db.sessions().begin() as session:
         session.execute(
-            update(db.reports).where(db.reports.c.id == report["report_id"]).values(facts=report["facts"])
+            update(db.reports)
+            .where(db.reports.c.id == report["report_id"])
+            .values(
+                facts=report["facts"], narrative="Saved journal. Tracking bounds are not behavior duration."
+            )
         )
     assert [item["id"] for item in saved["media"]] == [earlier, later]
     page = pgclient.get("/reports/daily/2026-11-06")
@@ -277,7 +281,11 @@ def test_grouped_visit_shows_ordered_photos_and_a_span(pgclient):
     ):
         assert boilerplate not in page.text
     assert "photos-swipe" in page.text
-    start, end = re.search(
-        r'<line x1="([^"]+)" x2="([^"]+)" [^>]+class="map-visit feeder"', page.text
-    ).groups()
-    assert float(end) > float(start)
+    assert "No other behavior seen" in page.text
+    assert "Good evidence" not in page.text
+    assert "Tracking bounds" not in page.text
+    width = re.search(
+        r'<rect x="[^"]+" y="53" width="([^"]+)" height="28" [^>]+class="map-visit feeder"', page.text
+    )
+    assert float(width[1]) == 1.3
+    assert "8:00 AM–8:02 AM" in page.text

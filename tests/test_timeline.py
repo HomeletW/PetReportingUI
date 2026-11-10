@@ -69,3 +69,16 @@ def test_conflicting_findings_become_uncertain_without_merging_distinct_behavior
     ]
     assert findings[0]["evidence_ids"] == ["one", "two"]
     assert result["observations"][0]["assessment"] == "supported"
+
+
+def test_visit_map_bars_scale_to_grouped_span_and_clip_at_midnight():
+    short = {**event("short", "2026-11-06T10:00:00+00:00"), "end": "2026-11-06T11:00:00+00:00"}
+    long = {**event("long", "2026-11-06T12:00:00+00:00"), "end": "2026-11-06T14:00:00+00:00"}
+    open_visit = event("open", "2026-11-06T18:00:00+00:00")
+    crosses_midnight = {**event("cross", "2026-11-07T04:00:00+00:00"), "end": "2026-11-07T06:00:00+00:00"}
+    visits = day_timeline([short, long, open_visit, crosses_midnight], date(2026, 11, 6), "America/Toronto")[
+        "visits"
+    ]
+    assert visits[1]["map_width"] == 2 * visits[0]["map_width"]
+    assert visits[2]["end_x"] == visits[2]["x"] and visits[2]["map_width"] == 0.1
+    assert visits[3]["end_x"] == 968 and visits[3]["map_width"] == visits[0]["map_width"]

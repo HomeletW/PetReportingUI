@@ -45,6 +45,13 @@ def day_timeline(records, local_date, timezone):
         visit.update(clock=clock, moment_index=index, x=x(stamp), lane="right" if index % 2 == 0 else "left")
         end_stamp = datetime.fromisoformat(visit["end"]) if visit.get("end") else stamp
         visit["end_x"] = max(visit["x"], x(end_stamp))
+        # Keep even instantaneous and open tracks visible without inventing a time span.
+        visit["map_width"] = max(0.1, round(visit["end_x"] - visit["x"], 2))
+        if visit.get("end"):
+            local_end = end_stamp.astimezone(zone)
+            visit["end_clock"] = local_end.strftime("%I:%M %p").lstrip("0")
+            if elapsed != 86400:
+                visit["end_clock"] += " " + local_end.tzname()
         gap = max(0, int((stamp.timestamp() - previous.timestamp()) / 60)) if previous else 0
         visit["gap_label"] = ""
         if gap >= 45:
