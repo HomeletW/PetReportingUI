@@ -216,6 +216,17 @@ add(
         + "const state=$input.first().json;\ntry{return [{json:afterCollection(state,$now)}];}catch{return [{json:markFailed(state,'collection_incomplete')}];}",
     },
 )
+add(
+    "planImages",
+    "Plan evidence downloads",
+    "n8n-nodes-base.code",
+    2,
+    {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const s=$input.first().json;return s.current_images.map((image,i)=>({json:{url:s.cfg.report_url+image.inference_path,index:i},pairedItem:{item:0}}));",
+    },
+    [{"url": "http://localhost:8092/internal/v1/media/example", "index": 0}],
+)
 image_opts = {
     **opts,
     "timeout": 60000,
@@ -235,7 +246,7 @@ add(
     4.5,
     {
         "method": "GET",
-        "url": Expr("{{ $json.cfg.report_url + $json.request.path }}"),
+        "url": Expr("{{ $json.url }}"),
         "authentication": "genericCredentialType",
         "genericAuthType": "httpTemplatedCustomAuth",
         "options": image_opts,
@@ -243,6 +254,17 @@ add(
     [{"ok": True}],
     {"httpTemplatedCustomAuth": "Pet Reporting API"},
     onError="continueRegularOutput",
+)
+add(
+    "bundleImages",
+    "Bundle ordered evidence",
+    "n8n-nodes-base.code",
+    2,
+    {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items=$input.all();const binary={};if(items.every(i=>i.binary?.data)){items.forEach((item,i)=>{binary['frame'+i]=item.binary.data;});}return [{json:{fields:Object.keys(binary).join(',') || 'missing'},binary,pairedItem:{item:0}}];",
+    },
+    [{"fields": "frame0,frame1"}],
 )
 add(
     "vision",
@@ -255,9 +277,9 @@ add(
         "modelId": {"__rl": True, "mode": "id", "value": cfg["model"]},
         "text": Expr('{{ $("Dispatch action").item.json.current_prompt }}'),
         "inputType": "binary",
-        "binaryPropertyName": "data",
+        "binaryPropertyName": Expr("{{ $json.fields }}"),
         "simplify": True,
-        "options": {"temperature": 0, "think": False, "num_predict": 512, "format": "json", "num_ctx": 4096},
+        "options": {"temperature": 0, "think": False, "num_predict": 512, "format": "json", "num_ctx": 8192},
     },
     [{"content": "{}"}],
     {"ollamaApi": "Ollama account"},
@@ -267,7 +289,7 @@ parse = (
     common
     + """const state=$('Dispatch action').item.json;
 state.clock_ms=$now.toMillis();
-const parsed=safeModelResult($input.first().json,state.current_visit,state.current_media.media_id);
+const parsed=safeModelResult($input.first().json,state.current_visit,state.current_images.map(image=>image.media_id));
 if(parsed){return [{json:reportRequest(state,'PUT','/visits/'+state.current_visit.id+'/classification',{result:parsed,model:{name:state.cfg.model},prompt_version:state.cfg.prompt_version,input_fingerprint:state.current_fingerprint || ('uncached:'+state.execution_id+':'+state.seq)},'classification')}];}
 state.classification_failures+=1;state.errors.push('model_failed');state.media_index+=1;
 return [{json:nextMedia(state)}];"""
@@ -497,11 +519,11 @@ lines += [
     ".add(schedule).to(morningMode).to(settingsNode)",
     ".add(batchDispatch.onCase(0,runBatch.to(batchAdvance).to(batchDispatch)).onCase(1,finalSummary))",
     ".add(subworkflow).to(settingsNode).to(initializeNode).to(dispatch)",
-    ".add(dispatch.onCase(0,write.to(advanceNode)).onCase(1,read.to(advanceNode)).onCase(2,login.to(advanceNode)).onCase(3,source.to(advanceNode)).onCase(4,group.to(dispatch)).onCase(5,image.to(vision).to(validateModel).to(dispatch)).onCase(6,notify.to(advanceNode)).onCase(7,complete))",
+    ".add(dispatch.onCase(0,write.to(advanceNode)).onCase(1,read.to(advanceNode)).onCase(2,login.to(advanceNode)).onCase(3,source.to(advanceNode)).onCase(4,group.to(dispatch)).onCase(5,planImages.to(image).to(bundleImages).to(vision).to(validateModel).to(dispatch)).onCase(6,notify.to(advanceNode)).onCase(7,complete))",
     ".add(advanceNode).to(dispatch)",
     ".add(note)",
     ".group('Run and notify',[runMode,batchPlan,batchDispatch,runBatch,batchAdvance,finalSummary],{description:'Processes every eligible visit through small executions of this same workflow, then sends a notification unless Run mode has dry_run=true.'})",
-    ".group('Process one batch',[settingsNode,initializeNode,dispatch,write,read,login,source,advanceNode,group,image,vision,validateModel,notify,complete],{description:'Collects yesterday, caches evidence, classifies a bounded batch, saves reports and guards Home Assistant delivery.'});",
+    ".group('Process one batch',[settingsNode,initializeNode,dispatch,write,read,login,source,advanceNode,group,planImages,image,bundleImages,vision,validateModel,notify,complete],{description:'Collects yesterday, caches evidence, classifies a bounded batch, saves reports and guards Home Assistant delivery.'});",
 ]
 code = "\n".join(lines) + "\n"
 (ROOT / "workflows/morning.sdk.ts").write_text(code)

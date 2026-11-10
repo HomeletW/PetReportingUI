@@ -19,3 +19,12 @@ document.querySelectorAll('.moment-dialog').forEach((dialog) => {
 });
 if (location.hash.startsWith('#moment-')) openMoment(location.hash.slice(1));
 window.addEventListener('hashchange', () => { if (location.hash.startsWith('#moment-')) openMoment(location.hash.slice(1)); });
+
+document.querySelectorAll('[data-gallery-step]').forEach(button => {
+  button.addEventListener('click', () => {
+    const strip = button.closest('.photo-gallery').querySelector('.photos-swipe');
+    const index = Math.round(strip.scrollLeft / strip.clientWidth);
+    strip.scrollTo({left: (index + Number(button.dataset.galleryStep)) * strip.clientWidth,
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+  });
+});

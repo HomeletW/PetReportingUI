@@ -125,7 +125,7 @@ test('notification failures are recorded as unknown without a second send',()=>{
 });
 
 test('uncached eligible visits beyond the batch budget are counted for the next run',()=>{
- const s={cfg:{...cfg,inference_enabled:true,max_classifications_per_run:3},run,seq:0,execution_id:'batch',request:{tag:'visit_detail'},current_media:{media_id:'media-id'},current_visit:{id:'visit-id',member_event_ids:['event-id']},classification_count:3,classification_deferred:0,media_index:0,candidates:[],clock_ms:now.toMillis(),last_heartbeat:now.toMillis(),dates:['2026-11-06'],local_day_ends:{'2026-11-06':'2026-11-07'}};
+ const s={cfg:{...cfg,inference_enabled:true,max_classifications_per_run:3},run,seq:0,execution_id:'batch',request:{tag:'visit_detail'},current_images:[{media_id:'media-id',start:1793980800,end:1793980860}],current_visit:{id:'visit-id',station_id:'feeder',member_event_ids:['event-id']},classification_count:3,classification_deferred:0,media_index:0,candidates:[],clock_ms:now.toMillis(),last_heartbeat:now.toMillis(),dates:['2026-11-06'],local_day_ends:{'2026-11-06':'2026-11-07'}};
  context.advance(s,{statusCode:200,body:{media:[{id:'media-id',status:'ready',sha256:'fixture'}]}},now);
  assert.equal(s.classification_deferred,1);
  assert.equal(s.request.tag,'prepare');
@@ -221,4 +221,19 @@ test('manual resend has one stable execution key and keeps the scheduled deliver
  assert.equal(automatic.resend_key,null);
  const dry=context.initialize(enabled,{...options,dry_run:true},now,'44');
  assert.equal(dry.resend_key,null);
+});
+
+test('a grouped visit caches every available source snapshot before selecting chronological model inputs',()=>{
+ const evidence=Array.from({length:5},(_,i)=>({id:'e'+i,start:1793980800+i*30,end:1793980810+i*30,has_snapshot:true}));
+ const s={cfg:{...cfg,inference_enabled:true,max_classification_images:3},run,seq:0,execution_id:'grouped',media_index:0,visit_ids:['v'],candidates:[{station_id:'feeder',member_event_ids:evidence.map(e=>e.id),evidence}],last_heartbeat:now.toMillis(),clock_ms:now.toMillis()};
+ context.nextMedia(s);
+ const cached=[];
+ while(s.request.tag==='cache'){
+   const ids=[...s.request.body.event_ids];
+   cached.push(...ids);
+   context.advance(s,{statusCode:200,body:{media:ids.reverse().map(id=>({event_id:id,media_id:'m-'+id,status:'ready',variant:'snapshot',inference_path:'/internal/v1/media/m-'+id}))}},now);
+ }
+ assert.deepEqual(cached,['e0','e1','e2','e3','e4']);
+ assert.equal(s.request.tag,'visit_detail');
+ assert.deepEqual(Array.from(s.current_images,i=>i.event_id),['e0','e2','e4']);
 });

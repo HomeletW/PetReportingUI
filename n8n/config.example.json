@@ -11,18 +11,20 @@
       "camera": "feeder_camera",
       "zone": "feeder",
       "kind": "feeder",
-      "enabled": true
+      "enabled": true,
+      "merge_gap_seconds": 60
     },
     {
       "id": "litterbox",
       "camera": "litterbox_camera",
       "zone": "litterbox",
       "kind": "litterbox",
-      "enabled": true
+      "enabled": true,
+      "merge_gap_seconds": 300
     }
   ],
   "merge_gap_seconds": 60,
-  "grouping_version": "station-v1-gap60",
+  "grouping_version": "station-v2-per-station",
   "max_cluster_seconds": 1800,
   "max_cluster_fragments": 30,
   "page_limit": 100,
@@ -30,7 +32,7 @@
   "max_events": 500,
   "weekly_weekday": 7,
   "model": "qwen3-vl:8b-instruct",
-  "prompt_version": "station-observation-v2",
+  "prompt_version": "station-sequence-v3",
   "inference_enabled": true,
   "max_classifications_per_run": 3,
   "notifications_enabled": false,
@@ -39,5 +41,10 @@
   "clip_verified": false,
   "boundary_context_seconds": 300,
   "max_state_bytes": 500000,
-  "notification_service": "notify.all_devices"
+  "notification_service": "notify.all_devices",
+  "max_classification_images": 3,
+  "classification_prompts": {
+    "feeder": "关注 目标猫是否进食或饮水。忽略背景噪声、光照变化和无关运动。按顺序比较画面；食盆或水盆附近的停留是线索，结合低头、嘴部位置及与食物或水的交互判断。画面不连续时不要求拍到明确的咀嚼或舔水瞬间，但仅靠接近或停留不足以确认。进食与饮水分别判断。",
+    "litterbox": "关注 目标猫在猫砂盆内的姿态和前后变化，重点区分排便、排尿和单纯进出或停留。不要求拍到排泄瞬间；有相互印证的姿态与行为可作为线索，但仅在盆内或单张蹲姿不足以区分。看不清时保留不确定。"
+  }
 }

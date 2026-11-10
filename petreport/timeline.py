@@ -39,6 +39,8 @@ def day_timeline(records, local_date, timezone):
         if elapsed != 86400:
             clock += " " + stamp.tzname()
         visit.update(clock=clock, moment_index=index, x=x(stamp), lane="right" if index % 2 == 0 else "left")
+        end_stamp = datetime.fromisoformat(visit["end"]) if visit.get("end") else stamp
+        visit["end_x"] = max(visit["x"], x(end_stamp))
         gap = max(0, int((stamp.timestamp() - previous.timestamp()) / 60)) if previous else 0
         visit["gap_label"] = ""
         if gap >= 45:

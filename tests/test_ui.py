@@ -175,3 +175,43 @@ def test_today_only_displays_available_household_daily_report(pgclient, monkeypa
         response = pgclient.get("/today")
         assert response.status_code == 200
         assert "Today’s journal isn’t available yet" in response.text
+
+
+def test_grouped_visit_shows_ordered_photos_and_a_span(pgclient):
+    from test_server import call, lease
+
+    run, first, batch, _ = seed(pgclient)
+    second = {
+        **first,
+        "id": "later-cat",
+        "start_time": "2026-11-06T13:01:00Z",
+        "end_time": "2026-11-06T13:02:00Z",
+    }
+    call(
+        pgclient,
+        "/events/upsert",
+        {
+            **lease(run),
+            "source_id": "frigate-home",
+            "local_start": "2026-11-06",
+            "local_end": "2026-11-07",
+            "events": [second],
+            "collection_status": "complete",
+        },
+    )
+    batch["candidates"][0]["member_event_ids"] = [first["id"], second["id"]]
+    visit = call(pgclient, "/visits/batch", batch, "PUT")["visit_ids"][0]
+    later, _ = attach_media(visit, second["id"])
+    earlier, _ = attach_media(visit, first["id"])
+    report = publish(pgclient, run)
+    assert report["facts"]["counts"]["feeder"] == 1
+    saved = report["facts"]["visits"][0]
+    assert saved["detection_count"] == 2
+    assert [item["id"] for item in saved["media"]] == [earlier, later]
+    page = pgclient.get("/reports/daily/2026-11-06")
+    assert "2 detections" in page.text and "2 snapshots" in page.text
+    assert "photos-swipe" in page.text
+    start, end = re.search(
+        r'<line x1="([^"]+)" x2="([^"]+)" [^>]+class="map-visit feeder"', page.text
+    ).groups()
+    assert float(end) > float(start)

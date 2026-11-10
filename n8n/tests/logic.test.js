@@ -68,3 +68,26 @@ test('a copied prompt placeholder is not accepted as evidence reasoning',()=>{
  const value={schema_version:1,visit_id:'visit',pet_id:'coconut',identity_method:'single_pet_assumption',observations:[{behavior:'unknown',assessment:'uncertain',evidence_ids:['media'],reason:'Brief visible-evidence rationale'}],evidence_quality:'limited'};
  assert.equal(safeModelResult(JSON.stringify(value),visit,'media'),null);
 });
+
+test('the same detection gap splits feeder visits but merges litterbox visits',()=>{
+ const stations=[{...cfg.stations[0],merge_gap_seconds:60},{...cfg.stations[1],merge_gap_seconds:300}];
+ const rows=[event('f1',0,10),event('f2',200,220),event('l1',0,10,{camera:'litterbox_camera',zones:['litterbox']}),event('l2',200,220,{camera:'litterbox_camera',zones:['litterbox']})];
+ const visits=groupEvents(rows,{...cfg,stations});
+ assert.deepEqual(visits.filter(v=>v.station_id==='feeder').map(v=>v.member_event_ids),[['f1'],['f2']]);
+ assert.deepEqual(visits.find(v=>v.station_id==='litterbox').member_event_ids,['l1','l2']);
+});
+
+test('ordered image sampling and editable guidance affect the classification cache',()=>{
+ const {spreadImages,observationPrompt,inputFingerprint}=require('../lib/logic');
+ const visit={id:'v',station_id:'feeder',pet_id:'coconut',identity_method:'single_pet_assumption',member_event_ids:['a','b','c','d','e']};
+ const images=visit.member_event_ids.map((id,i)=>({media_id:id,start:i*10,end:i*10+5,sha256:id}));
+ const selected=spreadImages(images,3);
+ assert.deepEqual(selected.map(x=>x.media_id),['a','c','e']);
+ const a=observationPrompt(visit,selected,{...cfg,classification_prompts:{feeder:'观察进食'}});
+ const b=observationPrompt(visit,selected,{...cfg,classification_prompts:{feeder:'观察饮水'}});
+ assert.ok(a.includes('观察进食') && a.includes('detection_start'));
+ assert.notEqual(inputFingerprint(visit,selected,cfg,a),inputFingerprint(visit,selected,cfg,b));
+ const result={schema_version:1,visit_id:'v',pet_id:'coconut',identity_method:'single_pet_assumption',evidence_quality:'limited',observations:[{behavior:'eating',assessment:'uncertain',reason:'嘴部被食盆边缘遮挡',evidence_ids:['a','e']}]};
+ assert.ok(safeModelResult(JSON.stringify(result),visit,['a','c','e']));
+ assert.equal(safeModelResult(JSON.stringify(result),visit,['a','c']),null);
+});

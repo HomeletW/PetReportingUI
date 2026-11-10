@@ -13,7 +13,6 @@ function calendar(iso, now, zone) {
 
 function request(state, kind, method, path, body = null, tag = path) {
   state.seq += 1;
-  if(kind==='image')state.current_prompt=observationPrompt(state.current_visit,state.current_media.media_id);
   state.request = {kind,method,path,body,tag,key:`pet:${state.execution_id}:${state.seq}`};
   state.action = kind === 'report' ? (method === 'GET' ? 1 : 0) : kind === 'login' ? 2 : kind === 'source' ? 3 : kind === 'group' ? 4 : kind === 'image' ? 5 : kind === 'notify' ? 6 : 7;
   if(state.cfg?.max_state_bytes && JSON.stringify(state).length>state.cfg.max_state_bytes){
@@ -110,8 +109,7 @@ function afterCollection(state, now) {
   }
   state.candidates=state.candidates.map(v=>{
     const members=v.member_event_ids.map(id=>state.collection.events[id]);
-    const best=members.find(e=>e.has_snapshot)||members[0];
-    return {...v,evidence:{id:best.id,has_clip:best.has_clip}};
+    return {...v,evidence:members.map(e=>({id:e.id,start:e.start_time,end:e.end_time,has_snapshot:e.has_snapshot===true,has_clip:e.has_clip===true}))};
   });
   state.collection.raw=raw;
   state.events_to_store=Object.keys(raw);
@@ -145,13 +143,31 @@ function nextMedia(state) {
   if(state.clock_ms-state.last_heartbeat>60000){state.after_heartbeat='media';return reportRequest(state,'POST',`/runs/${state.run.run_id}/heartbeat`,{lease_token:state.run.lease_token},'heartbeat');}
   if(state.media_index>=state.candidates.length) return prepareNext(state);
   const v=state.candidates[state.media_index];
-  const best=v.evidence;
   state.current_visit={...v,id:state.visit_ids[state.media_index]};
-  state.current_event=best.id;
-  const variants=['snapshot'];
-  if(state.cfg.bbox_verified) variants.push('bbox');
-  if(state.cfg.clip_verified && best.has_clip && !v.provisional) variants.push('clip');
-  return reportRequest(state,'POST','/media/cache',{event_ids:[best.id],variants},'cache');
+  state.cached_images=[];
+  const snapshots=v.evidence.filter(e=>e.has_snapshot);
+  state.cache_jobs=[];
+  for(let i=0;i<snapshots.length;i+=2)state.cache_jobs.push({event_ids:snapshots.slice(i,i+2).map(e=>e.id),variants:['snapshot']});
+  const best=snapshots[0] || v.evidence[0];
+  const extras=[];
+  if(best.has_snapshot && state.cfg.bbox_verified)extras.push('bbox');
+  if(best.has_clip && state.cfg.clip_verified && !v.provisional)extras.push('clip');
+  if(extras.length)state.cache_jobs.push({event_ids:[best.id],variants:extras});
+  state.expected_snapshots=snapshots.length;
+  return nextEvidence(state);
+}
+
+function nextEvidence(state) {
+  const job=state.cache_jobs.shift();
+  if(job)return reportRequest(state,'POST','/media/cache',job,'cache');
+  const images=state.cached_images.sort((a,b)=>a.start-b.start || a.event_id.localeCompare(b.event_id));
+  if(!images.length && state.expected_snapshots)state.errors.push('media_unavailable');
+  if(images.length && state.cfg.inference_enabled){
+    state.current_images=spreadImages(images,state.cfg.max_classification_images ?? 3);
+    return reportRequest(state,'GET','/visits/'+state.current_visit.id,null,'visit_detail');
+  }
+  state.media_index+=1;
+  return nextMedia(state);
 }
 
 function prepareNext(state) {
@@ -253,10 +269,11 @@ function advance(state, response, now) {
       state.dates=selectDates(body,day,state.cfg,state.requested_dates);
       state.local_day_ends=Object.fromEntries(state.dates.map(d=>[d,calendar(d,now,state.cfg.timezone).plus({days:1}).toISODate()]));
       state.local_day_end_seconds=Object.fromEntries(state.dates.map(d=>[d,calendar(d,now,state.cfg.timezone).plus({days:1}).toSeconds()]));
-      state.collection={events:{},raw:{},raw_after:calendar(state.dates[0],now,state.cfg.timezone).toSeconds()-state.cfg.merge_gap_seconds,pending:[],current:null,pages:0};
+      state.collection={events:{},raw:{},raw_after:calendar(state.dates[0],now,state.cfg.timezone).toSeconds()-largestMergeGap(state.cfg),pending:[],current:null,pages:0};
       state.known_open=body.open_event_ids || [];
-      state.query_lower=calendar(state.dates[0],now,state.cfg.timezone).toSeconds()-state.cfg.boundary_context_seconds;
-      state.query_upper=Math.min(now.toSeconds(),calendar(state.local_day_ends[state.dates[0]],now,state.cfg.timezone).toSeconds()+state.cfg.boundary_context_seconds);
+      const context=Math.max(state.cfg.boundary_context_seconds,largestMergeGap(state.cfg));
+      state.query_lower=calendar(state.dates[0],now,state.cfg.timezone).toSeconds()-context;
+      state.query_upper=Math.min(now.toSeconds(),calendar(state.local_day_ends[state.dates[0]],now,state.cfg.timezone).toSeconds()+context);
       state.context_loaded=null;
       return boundaryRead(state,state.query_lower,state.query_upper,'stored_boundary');
     }
@@ -309,21 +326,21 @@ function advance(state, response, now) {
     }
     case 'reconcile': state.visit_ids=body.visit_ids;state.media_index=0;state.stage='classify';return nextMedia(state);
     case 'cache': {
-      const snapshot=body.media.find(m=>m.status==='ready' && m.variant==='snapshot');
-      state.current_media=snapshot || null;
-      if(!snapshot) state.errors.push('media_unavailable');
-      if(snapshot && state.cfg.inference_enabled){return reportRequest(state,'GET','/visits/'+state.current_visit.id,null,'visit_detail');}
-      state.media_index+=1;
-      return nextMedia(state);
+      for(const asset of body.media.filter(m=>m.status==='ready' && m.variant==='snapshot')){
+        const event=state.current_visit.evidence.find(e=>e.id===asset.event_id);
+        if(event)state.cached_images.push({...asset,start:event.start,end:event.end});
+      }
+      return nextEvidence(state);
     }
     case 'visit_detail': {
-      const media=body.media.find(m=>m.id===state.current_media.media_id && m.status==='ready');
-      const stamp=media?.sha256 ? inputFingerprint(state.current_visit,media,state.cfg) : null;
+      state.current_images=state.current_images.map(image=>({...image,sha256:body.media.find(m=>m.id===image.media_id && m.status==='ready')?.sha256}));
+      state.current_prompt=observationPrompt(state.current_visit,state.current_images,state.cfg);
+      const stamp=state.current_images.every(image=>image.sha256) ? inputFingerprint(state.current_visit,state.current_images,state.cfg,state.current_prompt) : null;
       state.current_fingerprint=stamp;
       if(stamp && body.classification && body.input_fingerprint===stamp && body.prompt_version===state.cfg.prompt_version && body.model?.name===state.cfg.model){state.media_index+=1;return nextMedia(state);}
       if(state.classification_count>=state.cfg.max_classifications_per_run){state.classification_deferred+=1;state.media_index+=1;return nextMedia(state);}
       state.classification_count+=1;
-      return request(state,'image','GET',state.current_media.inference_path,null,'image');
+      return request(state,'image','GET','',null,'image');
     }
     case 'classification': state.classification_saved+=1;state.media_index+=1;return nextMedia(state);
     case 'prepare': state.current_prepared=body;return reportRequest(state,'PUT',`/reports/${body.report_id}/finalize`,{expected_revision:body.revision,use_template:true},'finalize');

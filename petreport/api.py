@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from sqlalchemy import delete, select, update, text
+from sqlalchemy import delete, func, select, update, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -468,7 +468,16 @@ def prepare(body: s.Prepare, session=Depends(session_for)):
     zone = ZoneInfo(body.timezone)
     rows = (
         session.execute(
-            select(db.visits, db.stations.c.kind)
+            select(
+                db.visits,
+                db.stations.c.kind,
+                select(func.count())
+                .select_from(db.visit_events)
+                .where(db.visit_events.c.visit_id == db.visits.c.id)
+                .correlate(db.visits)
+                .scalar_subquery()
+                .label("detection_count"),
+            )
             .join(db.stations, db.visits.c.station_id == db.stations.c.id)
             .where(
                 db.visits.c.active.is_(True),
@@ -495,9 +504,16 @@ def prepare(body: s.Prepare, session=Depends(session_for)):
                 behaviors[behavior] = behaviors.get(behavior, 0) + 1
         assets = (
             session.execute(
-                select(db.media.c.id, db.media.c.kind, db.media.c.variant)
+                select(
+                    db.media.c.id,
+                    db.media.c.kind,
+                    db.media.c.variant,
+                    db.events.c.start_time.label("detection_start"),
+                )
                 .join(db.visit_media, db.media.c.id == db.visit_media.c.media_id)
+                .join(db.events, db.events.c.id == db.media.c.event_id)
                 .where(db.visit_media.c.visit_id == visit["id"], db.media.c.status == "ready")
+                .order_by(db.events.c.start_time, db.events.c.event_id, db.media.c.variant.desc())
             )
             .mappings()
             .all()
@@ -518,7 +534,16 @@ def prepare(body: s.Prepare, session=Depends(session_for)):
                     "provisional": visit["provisional"],
                     "continuation": continuation,
                     "classification": visit["classification"],
-                    "media": [dict(a) for a in assets],
+                    "detection_count": visit["detection_count"],
+                    "media": [
+                        {
+                            **dict(a),
+                            "detection_clock": a["detection_start"]
+                            .astimezone(zone)
+                            .strftime("%b %d · %I:%M %p"),
+                        }
+                        for a in assets
+                    ],
                 }
             )
         )
