@@ -3,6 +3,8 @@
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from .classification import consolidate_classification
+
 
 def day_timeline(records, local_date, timezone):
     zone = ZoneInfo(timezone)
@@ -34,6 +36,8 @@ def day_timeline(records, local_date, timezone):
         sorted(records, key=lambda v: (datetime.fromisoformat(v["start"]), v["id"])), 1
     ):
         visit = dict(record)
+        if visit.get("classification"):
+            visit["classification"] = consolidate_classification(visit["classification"])
         stamp = datetime.fromisoformat(visit["start"]).astimezone(zone)
         clock = stamp.strftime("%I:%M %p").lstrip("0")
         if elapsed != 86400:

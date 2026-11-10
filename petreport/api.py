@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 
 from . import db, schemas as s
+from .classification import consolidate_classification
 from .config import settings
 from .core import (
     calendar_bounds,
@@ -419,7 +420,7 @@ def classify(visit_id: UUID, body: s.Classification, session=Depends(session_for
             fail(422, "insufficient_evidence_for_supported_assessment")
         if "http://" in observation.reason or "https://" in observation.reason:
             fail(422, "links_not_allowed_in_model_output")
-    value = body.result.model_dump(mode="json")
+    value = consolidate_classification(body.result.model_dump(mode="json"))
     changed = (
         visit["classification"] != value
         or visit["model"] != body.model
@@ -490,6 +491,7 @@ def prepare(body: s.Prepare, session=Depends(session_for)):
         .all()
     )
     for visit in rows:
+        classification = consolidate_classification(visit["classification"])
         continuation = visit["start_time"] < start
         if not continuation:
             counts[visit["kind"]] = counts.get(visit["kind"], 0) + 1
@@ -497,7 +499,7 @@ def prepare(body: s.Prepare, session=Depends(session_for)):
             daily[local_day][visit["kind"]] = daily[local_day].get(visit["kind"], 0) + 1
             supported = {
                 o["behavior"]
-                for o in (visit["classification"] or {}).get("observations", [])
+                for o in (classification or {}).get("observations", [])
                 if o["assessment"] == "supported"
             }
             for behavior in supported:
@@ -533,7 +535,7 @@ def prepare(body: s.Prepare, session=Depends(session_for)):
                     "end": visit["end_time"],
                     "provisional": visit["provisional"],
                     "continuation": continuation,
-                    "classification": visit["classification"],
+                    "classification": classification,
                     "detection_count": visit["detection_count"],
                     "media": [
                         {

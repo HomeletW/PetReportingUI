@@ -70,7 +70,7 @@ Edit the **Deployment settings** node in the n8n editor. Set `stations[].merge_g
 
 Set `classification_prompts.feeder` and `classification_prompts.litterbox` to your observation guidance. Station IDs take precedence over station kinds when looking up prompts. Write guidance about what to look for; the workflow supplies the JSON schema and requests a short Chinese evidence reason. Do not paste a second output format into the station guidance. Proximity alone is not treated as a confirmed meal or litterbox behavior.
 
-`max_classification_images` controls how many available snapshots go to Ollama in one request (default 3, allowed 1–4). The workflow spreads the sample across the visit, passes it in chronological order with detection intervals and IDs, and accepts citations only to the images sent. The journal keeps the full snapshot gallery and shows the detection count. Changes apply when a report is generated again; older reports are not automatically backfilled.
+`max_classification_images` controls how many available snapshots go to Ollama in one request (default 3, allowed 1–4). The workflow spreads the sample across the visit, passes it in chronological order with detection intervals and IDs, and accepts citations only to the images sent. One Ollama call evaluates the whole visit and should return at most one finding per behavior. If the model repeats a behavior, the server combines the evidence and shows a single finding; differing assessments are shown as uncertain. The journal keeps the full snapshot gallery and shows the detection count. Changes apply when a report is generated again; older reports are not automatically backfilled.
 
 ## Notification copy and icon
 

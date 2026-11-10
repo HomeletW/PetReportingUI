@@ -1,6 +1,6 @@
 import re
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from petreport import db
 from test_server import attach_media, publish, seed
@@ -203,13 +203,50 @@ def test_grouped_visit_shows_ordered_photos_and_a_span(pgclient):
     visit = call(pgclient, "/visits/batch", batch, "PUT")["visit_ids"][0]
     later, _ = attach_media(visit, second["id"])
     earlier, _ = attach_media(visit, first["id"])
+    result = {
+        "schema_version": 1,
+        "visit_id": visit,
+        "pet_id": "coconut",
+        "identity_method": "single_pet_assumption",
+        "evidence_quality": "good",
+        "observations": [
+            {
+                "behavior": "eating",
+                "assessment": "supported",
+                "evidence_ids": [mid],
+                "reason": "Visible eating",
+            }
+            for mid in (earlier, later)
+        ],
+    }
+    call(
+        pgclient,
+        f"/visits/{visit}/classification",
+        {
+            **lease(run),
+            "result": result,
+            "model": {"name": "fixture"},
+            "prompt_version": "v1",
+            "input_fingerprint": "grouped-fixture",
+        },
+        "PUT",
+    )
     report = publish(pgclient, run)
     assert report["facts"]["counts"]["feeder"] == 1
     saved = report["facts"]["visits"][0]
     assert saved["detection_count"] == 2
+    assert len(saved["classification"]["observations"]) == 1
+    assert saved["classification"]["observations"][0]["evidence_ids"] == [earlier, later]
+    # Older report snapshots may still contain separate per-image findings.
+    saved["classification"] = result
+    with db.sessions().begin() as session:
+        session.execute(
+            update(db.reports).where(db.reports.c.id == report["report_id"]).values(facts=report["facts"])
+        )
     assert [item["id"] for item in saved["media"]] == [earlier, later]
     page = pgclient.get("/reports/daily/2026-11-06")
     assert "2 detections" in page.text and "2 snapshots" in page.text
+    assert page.text.count("<strong>Eating</strong>") == 1
     assert "photos-swipe" in page.text
     start, end = re.search(
         r'<line x1="([^"]+)" x2="([^"]+)" [^>]+class="map-visit feeder"', page.text

@@ -45,3 +45,27 @@ def test_midnight_continuation_is_anchored_to_start_and_empty_periods_remain_vis
     assert len(data["periods"]) == 4
     assert len(data["periods"][0]["visits"]) == 1
     assert all(not period["visits"] for period in data["periods"][1:])
+
+
+def test_conflicting_findings_become_uncertain_without_merging_distinct_behaviors():
+    from petreport.classification import consolidate_classification
+
+    result = {
+        "observations": [
+            {"behavior": "eating", "assessment": "supported", "reason": "One cue", "evidence_ids": ["one"]},
+            {
+                "behavior": "drinking",
+                "assessment": "supported",
+                "reason": "Water contact",
+                "evidence_ids": ["two"],
+            },
+            {"behavior": "eating", "assessment": "uncertain", "reason": "Obscured", "evidence_ids": ["two"]},
+        ]
+    }
+    findings = consolidate_classification(result)["observations"]
+    assert [(f["behavior"], f["assessment"]) for f in findings] == [
+        ("eating", "uncertain"),
+        ("drinking", "supported"),
+    ]
+    assert findings[0]["evidence_ids"] == ["one", "two"]
+    assert result["observations"][0]["assessment"] == "supported"
